@@ -1,0 +1,59 @@
+<div id="app" class="app">
+    <header class="topbar">
+        <div class="title">piclr</div>
+        <div class="status">
+            <span>{{ view.index }} / {{ view.total }}</span>
+            <span>Queued: {{ view.queue_count }}</span>
+        </div>
+    </header>
+
+    {% if view.has_images %}
+    <main class="viewer">
+        <div class="frame">
+            <img src="/image/{{ view.image_id.unwrap_or(0) }}" alt="{{ view.image_label }}" style="transform: {{ view.image_transform }}" />
+        </div>
+        <div class="label">{{ view.image_label }}</div>
+        <div class="actions">
+            <button data-on:click="@post('/cmd/left')">Left</button>
+            <button data-on:click="@post('/cmd/right')">Right</button>
+            <button data-on:click="@post('/cmd/prev')">Prev</button>
+            <button data-on:click="@post('/cmd/next')">Next</button>
+            <button data-on:click="@post('/cmd/undo')">Undo</button>
+            <button data-on:click="@post('/cmd/apply')">Apply</button>
+        </div>
+    </main>
+    {% else %}
+    <main class="empty">
+        <p>No images loaded.</p>
+        <button data-on:click="@post('/cmd/open')">Open Folder</button>
+    </main>
+    {% endif %}
+
+    {% if view.show_open_modal %}
+    <div class="modal">
+        <div class="modal-card">
+            <h2>Select a folder</h2>
+            <p>Use the CLI path or enter a directory here.</p>
+            <form data-on:submit="@post('/cmd/open', { contentType: 'form' })">
+                <input type="text" name="path" placeholder="/path/to/images" />
+                <div class="actions">
+                    <button type="submit">Open</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if view.show_delete_confirm %}
+    <div class="modal">
+        <div class="modal-card">
+            <h2>Delete files?</h2>
+            <p>This cannot be undone.</p>
+            <div class="actions">
+                <button data-on:click="@post('/cmd/apply-cancel')">No</button>
+                <button data-on:click="@post('/cmd/apply-confirm')">Yes</button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>

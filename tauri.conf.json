@@ -1,0 +1,19 @@
+{
+    "productName": "piclr",
+    "version": "0.1.0",
+    "identifier": "com.piclr.app",
+    "build": {
+        "frontendDist": ".",
+        "devUrl": "http://localhost"
+    },
+    "app": {
+        "withGlobalTauri": true,
+        "windows": [
+            {
+                "title": "piclr",
+                "width": 1200,
+                "height": 800
+            }
+        ]
+    }
+}

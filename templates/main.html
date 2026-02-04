@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>piclr</title>
+        <link rel="stylesheet" href="/assets/app.css" />
+    </head>
+    <body
+        data-on:keydown.window="
+            if ($event.key === 'ArrowLeft') { @post('/cmd/left') }
+            if ($event.key === 'ArrowRight') { @post('/cmd/right') }
+            if ($event.key === 'ArrowUp' && !$event.ctrlKey) { @post('/cmd/prev') }
+            if ($event.key === 'ArrowDown' && !$event.ctrlKey) { @post('/cmd/next') }
+            if ($event.key === 'ArrowUp' && $event.ctrlKey) { @post('/cmd/jump-prev') }
+            if ($event.key === 'ArrowDown' && $event.ctrlKey) { @post('/cmd/jump-next') }
+            if ($event.key === 'o' && $event.ctrlKey) { @post('/cmd/open') }
+        "
+    >
+        {% include "app.html" %}
+        <script type="module" src="/assets/datastar.js"></script>
+    </body>
+</html>

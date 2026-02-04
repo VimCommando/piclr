@@ -1,0 +1,146 @@
+:root {
+    --bg: #0f1217;
+    --panel: #1b1f27;
+    --text: #f4f4f4;
+    --muted: #9aa3b2;
+    --accent: #ffb347;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
+    background: radial-gradient(circle at top, #1c2330, #0b0e13 70%);
+    color: var(--text);
+}
+
+.app {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 24px;
+    background: rgba(20, 23, 30, 0.85);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.title {
+    font-size: 18px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.status {
+    display: flex;
+    gap: 16px;
+    color: var(--muted);
+    font-size: 14px;
+}
+
+.viewer {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 24px;
+}
+
+.frame {
+    width: min(90vw, 900px);
+    height: min(70vh, 600px);
+    background: var(--panel);
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+    overflow: hidden;
+}
+
+.frame img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.label {
+    color: var(--muted);
+    font-size: 14px;
+}
+
+.actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.actions button {
+    border: none;
+    padding: 10px 18px;
+    border-radius: 999px;
+    background: var(--panel);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 14px;
+    transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.actions button:hover {
+    background: var(--accent);
+    color: #1c1c1c;
+    transform: translateY(-2px);
+}
+
+.empty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: var(--muted);
+}
+
+.modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-card {
+    background: var(--panel);
+    padding: 24px;
+    border-radius: 16px;
+    width: min(90vw, 420px);
+    text-align: center;
+}
+
+.modal-card input {
+    width: 100%;
+    margin-top: 12px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: #0f1217;
+    color: var(--text);
+}
+
+@media (max-width: 720px) {
+    .frame {
+        width: 92vw;
+        height: 55vh;
+    }
+}

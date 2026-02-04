@@ -1,0 +1,37 @@
+[package]
+name = "piclr"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = []
+metadata = ["dep:rexiv2"]
+tauri = ["dep:tauri", "dep:tauri-build"]
+
+[dependencies]
+axum = "0.7"
+askama = "0.12"
+bytes = "1"
+clap = { version = "4", features = ["derive"] }
+mime = "0.3"
+mime_guess = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "signal", "io-util"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+walkdir = "2"
+
+[dependencies.tauri]
+version = "2"
+optional = true
+
+[build-dependencies]
+ureq = "2"
+tauri-build = { version = "2", optional = true }
+[dependencies.rexiv2]
+version = "0.10"
+optional = true
