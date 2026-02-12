@@ -101,19 +101,16 @@ image-card {
     --align-shift: 0%;
     --image-inset: var(--space-2);
     object-fit: contain;
-    transition:
-        top var(--motion-fast) var(--motion-ease),
-        transform var(--motion-fast) var(--motion-ease),
-        opacity var(--motion-fast) var(--motion-ease);
+    transition: transform var(--motion-fast) var(--motion-ease), opacity var(--motion-fast) var(--motion-ease);
     transform: translateX(calc(-50% + var(--align-shift)));
 }
 
 image-card.align-left {
-    --align-shift: -20%;
+    --align-shift: -25%;
 }
 
 image-card.align-right {
-    --align-shift: 20%;
+    --align-shift: 25%;
 }
 
 image-card > .card-media {
@@ -276,8 +273,29 @@ image-card > .card-media > .card-img {
     cursor: pointer;
 }
 
+.queue-entry.log-entry-current {
+    outline: 2px solid var(--muted);
+    outline-offset: -2px;
+}
+
+.queue-entry.queue-tone-left.log-entry-current {
+    outline-color: var(--soft-red);
+}
+
+.queue-entry.queue-tone-right.log-entry-current {
+    outline-color: var(--soft-green);
+}
+
 .queue-entry:last-child {
     border-bottom: none;
+}
+
+.queue-entry.queue-entry-insert-before {
+    box-shadow: inset 0 2px 0 0 var(--muted);
+}
+
+.queue-log.queue-log-insert-end {
+    box-shadow: inset 0 -2px 0 0 var(--muted);
 }
 
 image-card > .card-caption {

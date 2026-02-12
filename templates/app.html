@@ -92,7 +92,8 @@
             <ul class="queue-log">
                 {% for item in view.file_items %}
                 <li
-                    class="queue-entry queue-tone-{{ item.action_tone }}"
+                    class="queue-entry queue-tone-{{ item.action_tone }}{% if item.image_id == view.current_image_id %} log-entry-current{% endif %}"
+                    data-image-id="{{ item.image_id }}"
                     data-on:click="@post('/cmd/select/{{ item.image_id }}')"
                 >
                     <span class="queue-arrow">{{ item.arrow }}</span>
@@ -214,10 +215,11 @@
             {% if view.queue_items.is_empty() %}
             <p>No queued actions.</p>
             {% else %}
-            <ul class="queue-log">
+            <ul class="queue-log{% if view.queue_insert_at_end %} queue-log-insert-end{% endif %}">
                 {% for item in view.queue_items %}
                 <li
-                    class="queue-entry queue-tone-{{ item.action_tone }}"
+                    class="queue-entry queue-tone-{{ item.action_tone }}{% if item.image_id == view.current_image_id %} log-entry-current{% endif %}{% if item.is_insert_before %} queue-entry-insert-before{% endif %}"
+                    data-image-id="{{ item.image_id }}"
                     data-on:click="@post('/cmd/select/{{ item.image_id }}')"
                 >
                     <span class="queue-arrow">{{ item.arrow }}</span>

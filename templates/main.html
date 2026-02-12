@@ -6,6 +6,34 @@
         <title>piclr</title>
         <link rel="stylesheet" href="/assets/app.css" />
         <script type="module" src="/assets/datastar.js"></script>
+        <script>
+            (() => {
+                const scrollCurrentLogEntries = () => {
+                    document.querySelectorAll(".queue-log").forEach((list) => {
+                        const current = list.querySelector(".log-entry-current");
+                        if (!current) return;
+                        const imageId = current.getAttribute("data-image-id") || "";
+                        if (list.getAttribute("data-scrolled-image-id") === imageId) return;
+                        requestAnimationFrame(() => {
+                            current.scrollIntoView({ block: "center" });
+                            list.setAttribute("data-scrolled-image-id", imageId);
+                        });
+                    });
+                };
+
+                const boot = () => {
+                    scrollCurrentLogEntries();
+                    const observer = new MutationObserver(scrollCurrentLogEntries);
+                    observer.observe(document.body, { childList: true, subtree: true });
+                };
+
+                if (document.readyState === "loading") {
+                    document.addEventListener("DOMContentLoaded", boot, { once: true });
+                } else {
+                    boot();
+                }
+            })();
+        </script>
     </head>
     <body
         data-init="@patch('/events', { openWhenHidden: true })"

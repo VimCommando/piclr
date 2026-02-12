@@ -493,7 +493,7 @@ async fn build_view(ctx: &AppContext) -> AppView {
     let help_modal_z = modal_layer(&inner.view_stack, ModalView::Help);
     let open_modal_z = modal_layer(&inner.view_stack, ModalView::OpenDirectory);
     let delete_modal_z = modal_layer(&inner.view_stack, ModalView::DeleteConfirm);
-    let queue_items = inner
+    let mut queue_items: Vec<QueueItem> = inner
         .images
         .iter()
         .filter_map(|image| {
@@ -506,6 +506,41 @@ async fn build_view(ctx: &AppContext) -> AppView {
             ))
         })
         .collect();
+    let queue_has_current = queue_items
+        .iter()
+        .any(|item: &QueueItem| item.image_id == current.map(|e| e.id).unwrap_or(0));
+    let mut queue_insert_before_id: Option<u64> = None;
+    let mut queue_insert_at_end = false;
+    if !queue_items.is_empty() && !queue_has_current {
+        if let Some(current_id) = current.map(|entry| entry.id) {
+            let current_pos = inner.images.iter().position(|image| image.id == current_id);
+            if let Some(current_pos) = current_pos {
+                let mut queued_positions: Vec<(usize, u64)> = inner
+                    .images
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, image)| image.queued_action.is_some())
+                    .map(|(idx, image)| (idx, image.id))
+                    .collect();
+                queued_positions.sort_by_key(|(idx, _)| *idx);
+                if let Some((_, before_id)) = queued_positions
+                    .iter()
+                    .find(|(idx, _)| *idx > current_pos)
+                    .copied()
+                {
+                    queue_insert_before_id = Some(before_id);
+                } else {
+                    queue_insert_at_end = true;
+                }
+            }
+        }
+    }
+    if let Some(before_id) = queue_insert_before_id {
+        queue_items
+            .iter_mut()
+            .filter(|item| item.image_id == before_id)
+            .for_each(|item| item.is_insert_before = true);
+    }
     let file_items = inner
         .images
         .iter()
@@ -527,6 +562,7 @@ async fn build_view(ctx: &AppContext) -> AppView {
         stack_cards,
         nav_direction,
         nav_tick: inner.nav_tick,
+        current_image_id: current.map(|entry| entry.id).unwrap_or(0),
         index,
         total,
         queue_count,
@@ -544,6 +580,8 @@ async fn build_view(ctx: &AppContext) -> AppView {
         help_modal_z,
         queue_items,
         file_items,
+        queue_insert_before_id,
+        queue_insert_at_end,
     }
 }
 
@@ -553,6 +591,7 @@ pub struct AppView {
     pub stack_cards: Vec<StackCard>,
     pub nav_direction: String,
     pub nav_tick: u64,
+    pub current_image_id: u64,
     pub index: usize,
     pub total: usize,
     pub queue_count: usize,
@@ -570,6 +609,8 @@ pub struct AppView {
     pub help_modal_z: usize,
     pub queue_items: Vec<QueueItem>,
     pub file_items: Vec<QueueItem>,
+    pub queue_insert_before_id: Option<u64>,
+    pub queue_insert_at_end: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -579,6 +620,7 @@ pub struct QueueItem {
     pub action_label: String,
     pub action_tone: String,
     pub file_label: String,
+    pub is_insert_before: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -586,7 +628,6 @@ pub struct StackCard {
     pub image_id: u64,
     pub alignment: String,
     pub action_item: QueueItem,
-    pub offset: isize,
     pub top_percent: f32,
 }
 
@@ -633,7 +674,6 @@ fn build_stack_cards(
                 image_id: image.id,
                 alignment: image_alignment_for(image),
                 action_item: queue_item_for_image(image, inner.root_dir.as_ref()),
-                offset,
                 top_percent,
             })
         })
@@ -686,6 +726,7 @@ fn queue_item_from_action(
         action_label,
         action_tone,
         file_label,
+        is_insert_before: false,
     }
 }
 
@@ -701,6 +742,7 @@ fn queue_item_none(image: &ImageEntry, root_dir: Option<&PathBuf>) -> QueueItem 
         action_label: "None".to_string(),
         action_tone: "neutral".to_string(),
         file_label,
+        is_insert_before: false,
     }
 }
 
