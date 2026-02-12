@@ -36,6 +36,47 @@ body {
     flex-direction: column;
 }
 
+.action-header {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    background: var(--panel-strong);
+}
+
+.action-header-half {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
+}
+
+.action-header-left {
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.action-header-title {
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.action-header-value {
+    font-weight: 600;
+    color: var(--text);
+}
+
+.action-header-count {
+    min-width: 30px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--status-text);
+    background: rgba(255, 255, 255, 0.1);
+}
+
 .title {
     font-size: 14px;
     letter-spacing: 0.08em;
@@ -74,16 +115,6 @@ body {
     flex: 1;
     width: 100%;
     min-height: 0;
-    animation-duration: var(--motion-fast);
-    animation-timing-function: var(--motion-ease);
-}
-
-.image-stack.nav-down {
-    animation-name: stack-scroll-down;
-}
-
-.image-stack.nav-up {
-    animation-name: stack-scroll-up;
 }
 
 image-card {
@@ -101,8 +132,12 @@ image-card {
     --align-shift: 0%;
     --image-inset: var(--space-2);
     object-fit: contain;
-    transition: transform var(--motion-fast) var(--motion-ease), opacity var(--motion-fast) var(--motion-ease);
+    transition:
+        top var(--motion-fast) var(--motion-ease),
+        transform var(--motion-fast) var(--motion-ease),
+        opacity var(--motion-fast) var(--motion-ease);
     transform: translateX(calc(-50% + var(--align-shift)));
+    will-change: top, transform, opacity;
 }
 
 image-card.align-left {
@@ -129,24 +164,6 @@ image-card > .card-media > .card-img {
     max-height: calc(100% - (var(--image-inset) * 2));
     object-fit: contain;
     object-position: center center;
-}
-
-@keyframes stack-scroll-down {
-    from {
-        transform: translateY(-2%);
-    }
-    to {
-        transform: translateY(0);
-    }
-}
-
-@keyframes stack-scroll-up {
-    from {
-        transform: translateY(2%);
-    }
-    to {
-        transform: translateY(0);
-    }
 }
 
 .actions {

@@ -487,6 +487,16 @@ async fn build_view(ctx: &AppContext) -> AppView {
         .iter()
         .filter(|image| image.queued_action.is_some())
         .count();
+    let left_action_count = inner
+        .images
+        .iter()
+        .filter(|image| matches!(decision_side(image), Some(DecisionSide::Left)))
+        .count();
+    let right_action_count = inner
+        .images
+        .iter()
+        .filter(|image| matches!(decision_side(image), Some(DecisionSide::Right)))
+        .count();
     let file_count = inner.images.len();
     let queue_modal_z = modal_layer(&inner.view_stack, ModalView::Queue);
     let files_modal_z = modal_layer(&inner.view_stack, ModalView::Files);
@@ -563,6 +573,10 @@ async fn build_view(ctx: &AppContext) -> AppView {
         nav_direction,
         nav_tick: inner.nav_tick,
         current_image_id: current.map(|entry| entry.id).unwrap_or(0),
+        left_action_label: action_config_label(&inner.action_mapping.left),
+        right_action_label: action_config_label(&inner.action_mapping.right),
+        left_action_count,
+        right_action_count,
         index,
         total,
         queue_count,
@@ -592,6 +606,10 @@ pub struct AppView {
     pub nav_direction: String,
     pub nav_tick: u64,
     pub current_image_id: u64,
+    pub left_action_label: String,
+    pub right_action_label: String,
+    pub left_action_count: usize,
+    pub right_action_count: usize,
     pub index: usize,
     pub total: usize,
     pub queue_count: usize,
@@ -652,6 +670,16 @@ fn queue_item_for_image(image: &ImageEntry, root_dir: Option<&PathBuf>) -> Queue
             queue_item_from_action(image, action, Some(*side), root_dir)
         }
         crate::domain::DecisionState::Undecided => queue_item_none(image, root_dir),
+    }
+}
+
+fn action_config_label(action: &ActionConfig) -> String {
+    match action {
+        ActionConfig::Keep => "Keep".to_string(),
+        ActionConfig::Delete => "Delete".to_string(),
+        ActionConfig::Move { .. } => "Move".to_string(),
+        ActionConfig::Rename { .. } => "Rename".to_string(),
+        ActionConfig::MetadataEdit { .. } => "Metadata".to_string(),
     }
 }
 

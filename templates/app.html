@@ -3,9 +3,22 @@
     <div class="modal-backdrop"></div>
     {% endif %}
 
+    <header class="action-header">
+        <div class="action-header-half action-header-left">
+            <span class="action-header-title">Left</span>
+            <span class="action-header-value">{{ view.left_action_label }}</span>
+            <span class="action-header-count">{{ view.left_action_count }}</span>
+        </div>
+        <div class="action-header-half action-header-right">
+            <span class="action-header-title">Right</span>
+            <span class="action-header-value">{{ view.right_action_label }}</span>
+            <span class="action-header-count">{{ view.right_action_count }}</span>
+        </div>
+    </header>
+
     {% if view.has_images %}
     <main class="viewer">
-        <div class="image-stack nav-{{ view.nav_direction }}" data-nav-tick="{{ view.nav_tick }}">
+        <div class="image-stack">
             {% for card in view.stack_cards %}
             <image-card
                 id="image-card-{{ card.image_id }}"
