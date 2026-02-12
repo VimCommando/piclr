@@ -1,70 +1,61 @@
 <div id="app" class="app">
-    <header class="topbar">
-        <div class="title">piclr</div>
-        <div class="status">
-            <button
-                class="counter-button"
-                data-on:click="@post('/cmd/show-files')"
-            >
-                Image: {% if view.total > 0 %} {{ view.index }} / {{ view.total
-                }} {% else %} 0 / 0 {% endif %}
-            </button>
-            <button
-                class="queue-button"
-                data-on:click="@post('/cmd/show-queue')"
-            >
-                Queued: {{ view.queue_count }}
-            </button>
-        </div>
-</header>
-
     {% if view.show_open_modal || view.show_delete_confirm || view.show_files_modal || view.show_help_modal || view.show_queue_modal %}
     <div class="modal-backdrop"></div>
     {% endif %}
 
     {% if view.has_images %}
     <main class="viewer">
-        <div class="frame frame-{{ view.image_alignment }}">
-            <img
-                src="/image/{{ view.image_id.unwrap_or(0) }}"
-                alt="{{ view.image_label }}"
-                style="transform: {{ view.image_transform }}"
-            />
-        </div>
-        {% if let Some(item) = view.current_action_item %}
-        <p class="action-caption queue-entry queue-tone-{{ item.action_tone }}">
-            <span class="queue-arrow">{{ item.arrow }}</span>
-            <span class="queue-action">{{ item.action_label }}</span>
-            <code class="queue-file">{{ item.file_label }}</code>
-        </p>
-        {% endif %}
-        <div class="actions">
-            <button data-on:click="@post('/cmd/left')">
-                <glyph>←</glyph>Left
-            </button>
-            <button data-on:click="@post('/cmd/next')">
-                <glyph>↓</glyph>Next
-            </button>
-            <button data-on:click="@post('/cmd/prev')">
-                <glyph>↑</glyph>Prev
-            </button>
-            <button data-on:click="@post('/cmd/right')">
-                <glyph>→</glyph>Right
-            </button>
-            <button data-on:click="@post('/cmd/undo')">
-                <glyph>↶</glyph>Undo
-            </button>
-            <button data-on:click="@post('/cmd/apply')">
-                <glyph>↩</glyph>Apply
-            </button>
+        <div class="image-stack nav-{{ view.nav_direction }}" data-nav-tick="{{ view.nav_tick }}">
+            {% for card in view.stack_cards %}
+            <image-card
+                id="image-card-{{ card.image_id }}"
+                class="align-{{ card.alignment }}"
+                style="--stack-top: {{ card.top_percent }}%;"
+            >
+                <div class="card-media">
+                    <img
+                        class="card-img"
+                        src="/image/{{ card.image_id }}"
+                        alt="{{ card.action_item.file_label }}"
+                    />
+                </div>
+                <div class="card-caption queue-entry queue-tone-{{ card.action_item.action_tone }}">
+                    <span class="queue-arrow">{{ card.action_item.arrow }}</span>
+                    <span class="queue-action">{{ card.action_item.action_label }}</span>
+                    <code class="queue-file">{{ card.action_item.file_label }}</code>
+                </div>
+            </image-card>
+            {% endfor %}
         </div>
     </main>
     {% else %}
     <main class="empty">
         <p>No images loaded.</p>
-        <button data-on:click="@post('/cmd/open')">Open Folder</button>
     </main>
-    {% endif %} {% if view.show_open_modal %}
+    {% endif %}
+
+    <footer class="footerbar">
+        <div class="title">piclr</div>
+        <div class="actions">
+            <button data-on:click="@post('/cmd/left')"><span class="btn-glyph">←</span>Left</button>
+            <button data-on:click="@post('/cmd/next')"><span class="btn-glyph">↓</span>Next</button>
+            <button data-on:click="@post('/cmd/prev')"><span class="btn-glyph">↑</span>Prev</button>
+            <button data-on:click="@post('/cmd/right')"><span class="btn-glyph">→</span>Right</button>
+            <button data-on:click="@post('/cmd/undo')"><span class="btn-glyph">↶</span>Undo</button>
+            <button data-on:click="@post('/cmd/apply')"><span class="btn-glyph">↩</span>Apply</button>
+            <button data-on:click="@post('/cmd/open')">Open</button>
+        </div>
+        <div class="status">
+            <button class="counter-button" data-on:click="@post('/cmd/show-files')">
+                Image: {% if view.total > 0 %}{{ view.index }} / {{ view.total }}{% else %}0 / 0{% endif %}
+            </button>
+            <button class="queue-button" data-on:click="@post('/cmd/show-queue')">
+                Queue: {{ view.queue_count }}
+            </button>
+        </div>
+    </footer>
+
+    {% if view.show_open_modal %}
     <div class="modal" style="z-index: {{ view.open_modal_z }}" data-on:click="if (evt.target === evt.currentTarget) { @post('/cmd/close') }">
         <div class="modal-card">
             <h2>Select a folder</h2>

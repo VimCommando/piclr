@@ -48,6 +48,8 @@ pub struct AppStateInner {
     pub rename_counter: u64,
     pub root_dir: Option<PathBuf>,
     pub view_stack: Vec<ModalView>,
+    pub nav_direction: Option<NavDirection>,
+    pub nav_tick: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -57,6 +59,12 @@ pub enum ModalView {
     Queue,
     Files,
     Help,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NavDirection {
+    Up,
+    Down,
 }
 
 impl AppStateInner {
@@ -73,6 +81,8 @@ impl AppStateInner {
             rename_counter: 1,
             root_dir: None,
             view_stack: Vec::new(),
+            nav_direction: None,
+            nav_tick: 0,
         }
     }
 
@@ -112,6 +122,7 @@ impl AppStateInner {
     pub fn next(&mut self) {
         if self.cursor + 1 < self.order.len() {
             self.cursor += 1;
+            self.record_nav(NavDirection::Down);
             self.update_preload();
         }
     }
@@ -119,6 +130,7 @@ impl AppStateInner {
     pub fn prev(&mut self) {
         if self.cursor > 0 {
             self.cursor -= 1;
+            self.record_nav(NavDirection::Up);
             self.update_preload();
         }
     }
@@ -136,6 +148,7 @@ impl AppStateInner {
             .find(|(_, idx)| self.images[**idx].decision.is_undecided())
         {
             self.cursor = start + offset;
+            self.record_nav(NavDirection::Down);
             self.update_preload();
         }
     }
@@ -152,6 +165,7 @@ impl AppStateInner {
             .find(|pos| self.images[self.order[*pos]].decision.is_undecided())
         {
             self.cursor = position;
+            self.record_nav(NavDirection::Up);
             self.update_preload();
         }
     }
@@ -162,11 +176,26 @@ impl AppStateInner {
             .iter()
             .position(|idx| self.images[*idx].id == image_id)
         {
+            let direction = if position > self.cursor {
+                Some(NavDirection::Down)
+            } else if position < self.cursor {
+                Some(NavDirection::Up)
+            } else {
+                None
+            };
             self.cursor = position;
+            if let Some(direction) = direction {
+                self.record_nav(direction);
+            }
             self.update_preload();
             return true;
         }
         false
+    }
+
+    fn record_nav(&mut self, direction: NavDirection) {
+        self.nav_direction = Some(direction);
+        self.nav_tick = self.nav_tick.saturating_add(1);
     }
 
     pub fn apply_decision(&mut self, side: DecisionSide) -> Option<DecisionOutcome> {

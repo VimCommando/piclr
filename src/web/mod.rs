@@ -1,4 +1,6 @@
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::Arc;
 use askama::Template;
 use axum::body::Bytes as BodyBytes;
 use axum::extract::{Path, State};
@@ -14,7 +16,7 @@ use mime_guess::MimeGuess;
 use tracing::warn;
 use serde::Deserialize;
 use datastar::prelude::{ElementPatchMode, PatchElements};
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, RwLock};
 
 #[derive(Deserialize)]
 struct OpenForm {
@@ -475,17 +477,11 @@ async fn build_view(ctx: &AppContext) -> AppView {
     let total = inner.order.len();
     let index = inner.cursor + 1;
     let current = inner.current();
-    if let Some(next_path) = inner.preload.next_path.clone() {
-        let cache = ctx.cache.clone();
-        tokio::spawn(async move {
-            if cache.read().await.contains_key(&next_path) {
-                return;
-            }
-            if let Ok(bytes) = load_image_bytes(&next_path).await {
-                cache.write().await.insert(next_path, Bytes::from(bytes));
-            }
-        });
-    }
+    let window_paths = preload_window_paths(inner, 5);
+    let cache = ctx.cache.clone();
+    tokio::spawn(async move {
+        maintain_cache_window(cache, window_paths).await;
+    });
     let queue_count = inner
         .images
         .iter()
@@ -520,30 +516,17 @@ async fn build_view(ctx: &AppContext) -> AppView {
             crate::domain::DecisionState::Undecided => queue_item_none(image, inner.root_dir.as_ref()),
         })
         .collect();
-    let current_action_item = current.map(|image| match &image.decision {
-        crate::domain::DecisionState::Decided { side, action } => {
-            queue_item_from_action(image, action, Some(*side), inner.root_dir.as_ref())
-        }
-        crate::domain::DecisionState::Undecided => {
-            queue_item_none(image, inner.root_dir.as_ref())
-        }
-    });
-    let image_alignment = match decision_side_from_entry(current) {
-        Some(DecisionSide::Left) => "left".to_string(),
-        Some(DecisionSide::Right) => "right".to_string(),
-        None => "center".to_string(),
+    let stack_cards = build_stack_cards(inner, 5);
+    let nav_direction = match inner.nav_direction {
+        Some(crate::domain::state::NavDirection::Up) => "up".to_string(),
+        Some(crate::domain::state::NavDirection::Down) => "down".to_string(),
+        None => "none".to_string(),
     };
     AppView {
         has_images: current.is_some(),
-        image_id: current.map(|entry| entry.id),
-        image_label: current
-            .map(|entry| entry.path.file_name().unwrap_or_default().to_string_lossy().to_string())
-            .unwrap_or_default(),
-        image_transform: current
-            .and_then(|entry| orientation_transform(entry.meta.orientation))
-            .unwrap_or_else(|| "".to_string()),
-        image_alignment,
-        current_action_item,
+        stack_cards,
+        nav_direction,
+        nav_tick: inner.nav_tick,
         index,
         total,
         queue_count,
@@ -567,11 +550,9 @@ async fn build_view(ctx: &AppContext) -> AppView {
 #[derive(Clone, Debug)]
 pub struct AppView {
     pub has_images: bool,
-    pub image_id: Option<u64>,
-    pub image_label: String,
-    pub image_transform: String,
-    pub image_alignment: String,
-    pub current_action_item: Option<QueueItem>,
+    pub stack_cards: Vec<StackCard>,
+    pub nav_direction: String,
+    pub nav_tick: u64,
     pub index: usize,
     pub total: usize,
     pub queue_count: usize,
@@ -600,6 +581,15 @@ pub struct QueueItem {
     pub file_label: String,
 }
 
+#[derive(Clone, Debug)]
+pub struct StackCard {
+    pub image_id: u64,
+    pub alignment: String,
+    pub action_item: QueueItem,
+    pub offset: isize,
+    pub top_percent: f32,
+}
+
 fn decision_side(image: &ImageEntry) -> Option<DecisionSide> {
     match &image.decision {
         crate::domain::DecisionState::Decided { side, .. } => Some(*side),
@@ -607,8 +597,47 @@ fn decision_side(image: &ImageEntry) -> Option<DecisionSide> {
     }
 }
 
-fn decision_side_from_entry(image: Option<&ImageEntry>) -> Option<DecisionSide> {
-    image.and_then(decision_side)
+fn image_alignment_for(image: &ImageEntry) -> String {
+    match decision_side(image) {
+        Some(DecisionSide::Left) => "left".to_string(),
+        Some(DecisionSide::Right) => "right".to_string(),
+        None => "center".to_string(),
+    }
+}
+
+fn queue_item_for_image(image: &ImageEntry, root_dir: Option<&PathBuf>) -> QueueItem {
+    match &image.decision {
+        crate::domain::DecisionState::Decided { side, action } => {
+            queue_item_from_action(image, action, Some(*side), root_dir)
+        }
+        crate::domain::DecisionState::Undecided => queue_item_none(image, root_dir),
+    }
+}
+
+fn build_stack_cards(
+    inner: &crate::domain::state::AppStateInner,
+    radius: usize,
+) -> Vec<StackCard> {
+    if inner.order.is_empty() {
+        return Vec::new();
+    }
+    let start = inner.cursor.saturating_sub(radius);
+    let end = (inner.cursor + radius).min(inner.order.len().saturating_sub(1));
+    (start..=end)
+        .filter_map(|pos| {
+            let idx = *inner.order.get(pos)?;
+            let image = inner.images.get(idx)?;
+            let offset = pos as isize - inner.cursor as isize;
+            let top_percent = 16.0 + (offset as f32 * 70.0);
+            Some(StackCard {
+                image_id: image.id,
+                alignment: image_alignment_for(image),
+                action_item: queue_item_for_image(image, inner.root_dir.as_ref()),
+                offset,
+                top_percent,
+            })
+        })
+        .collect()
 }
 
 fn queue_item_from_action(
@@ -675,6 +704,46 @@ fn queue_item_none(image: &ImageEntry, root_dir: Option<&PathBuf>) -> QueueItem 
     }
 }
 
+fn preload_window_paths(inner: &crate::domain::state::AppStateInner, radius: usize) -> Vec<PathBuf> {
+    if inner.order.is_empty() {
+        return Vec::new();
+    }
+    let start = inner.cursor.saturating_sub(radius);
+    let end = (inner.cursor + radius).min(inner.order.len().saturating_sub(1));
+    (start..=end)
+        .filter_map(|pos| {
+            inner
+                .order
+                .get(pos)
+                .and_then(|idx| inner.images.get(*idx))
+                .map(|entry| entry.path.clone())
+        })
+        .collect()
+}
+
+async fn maintain_cache_window(
+    cache: Arc<RwLock<HashMap<PathBuf, Bytes>>>,
+    desired_paths: Vec<PathBuf>,
+) {
+    let keep: HashSet<PathBuf> = desired_paths.iter().cloned().collect();
+    {
+        let mut guard = cache.write().await;
+        guard.retain(|path, _| keep.contains(path));
+    }
+    for path in desired_paths {
+        let exists = {
+            let guard = cache.read().await;
+            guard.contains_key(&path)
+        };
+        if exists {
+            continue;
+        }
+        if let Ok(bytes) = load_image_bytes(&path).await {
+            cache.write().await.insert(path, Bytes::from(bytes));
+        }
+    }
+}
+
 fn modal_layer(stack: &[ModalView], view: ModalView) -> usize {
     let base = 1000usize;
     stack
@@ -682,20 +751,6 @@ fn modal_layer(stack: &[ModalView], view: ModalView) -> usize {
         .position(|entry| *entry == view)
         .map(|idx| base + idx)
         .unwrap_or(0)
-}
-
-fn orientation_transform(value: Option<u16>) -> Option<String> {
-    let degrees = match value? {
-        3 => 180,
-        6 => 90,
-        8 => 270,
-        _ => 0,
-    };
-    if degrees == 0 {
-        None
-    } else {
-        Some(format!("rotate({}deg)", degrees))
-    }
 }
 
 #[derive(Template)]
