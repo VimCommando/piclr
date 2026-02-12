@@ -22,7 +22,7 @@ struct OpenForm {
 }
 
 use crate::app::AppContext;
-use crate::domain::{ActionConfig, DecisionSide};
+use crate::domain::{ActionConfig, DecisionSide, ImageEntry, ModalView};
 use crate::fs::{apply_action, apply_action_with_undo, apply_undo_action, load_image_bytes, scan_images, FsConfig};
 
 #[derive(Clone)]
@@ -43,10 +43,9 @@ pub fn router(ctx: AppContext) -> Router {
         .route("/cmd/undo", post(cmd_undo))
         .route("/cmd/apply", post(cmd_apply))
         .route("/cmd/apply-confirm", post(cmd_apply_confirm))
-        .route("/cmd/apply-cancel", post(cmd_apply_cancel))
         .route("/cmd/open", post(cmd_open))
-        .route("/cmd/queue-toggle", post(cmd_queue_toggle))
-        .route("/cmd/queue-close", post(cmd_queue_close))
+        .route("/cmd/show-queue", post(cmd_show_queue))
+        .route("/cmd/close", post(cmd_close))
         .route("/events", get(events))
         .route("/image/{id}", get(image))
         .route("/assets/datastar.js", get(datastar_js))
@@ -55,6 +54,13 @@ pub fn router(ctx: AppContext) -> Router {
 }
 
 async fn index(State(state): State<WebState>) -> Html<String> {
+    {
+        let mut guard = state.ctx.state.write().await;
+        let inner = guard.inner_mut();
+        if inner.root_dir.is_none() && !inner.has_view(ModalView::OpenDirectory) {
+            inner.show_view(ModalView::OpenDirectory);
+        }
+    }
     let ctx = state.ctx.clone();
     render_full_page(&ctx).await
 }
@@ -137,7 +143,7 @@ async fn cmd_apply(State(state): State<WebState>) -> impl IntoResponse {
 
     if needs_confirm {
         let mut guard = state.ctx.state.write().await;
-        guard.inner_mut().pending_delete_confirm = true;
+        guard.inner_mut().show_view(ModalView::DeleteConfirm);
         drop(guard);
         let ctx = state.ctx.clone();
         broadcast_patch(&ctx).await;
@@ -153,18 +159,9 @@ async fn cmd_apply(State(state): State<WebState>) -> impl IntoResponse {
 async fn cmd_apply_confirm(State(state): State<WebState>) -> impl IntoResponse {
     {
         let mut guard = state.ctx.state.write().await;
-        guard.inner_mut().pending_delete_confirm = false;
+        guard.inner_mut().hide_view(ModalView::DeleteConfirm);
     }
     apply_queue(&state.ctx).await;
-    let ctx = state.ctx.clone();
-    broadcast_patch(&ctx).await;
-    StatusCode::NO_CONTENT
-}
-
-async fn cmd_apply_cancel(State(state): State<WebState>) -> impl IntoResponse {
-    let mut guard = state.ctx.state.write().await;
-    guard.inner_mut().pending_delete_confirm = false;
-    drop(guard);
     let ctx = state.ctx.clone();
     broadcast_patch(&ctx).await;
     StatusCode::NO_CONTENT
@@ -216,28 +213,28 @@ async fn cmd_open(
     if let Some(path) = path {
         run_scan(&state.ctx, path).await;
         let mut guard = state.ctx.state.write().await;
-        guard.inner_mut().show_open_modal = false;
+        guard.inner_mut().hide_view(ModalView::OpenDirectory);
     } else {
         let mut guard = state.ctx.state.write().await;
-        guard.inner_mut().show_open_modal = true;
+        guard.inner_mut().show_view(ModalView::OpenDirectory);
     }
     let ctx = state.ctx.clone();
     broadcast_patch(&ctx).await;
     StatusCode::NO_CONTENT
 }
 
-async fn cmd_queue_toggle(State(state): State<WebState>) -> impl IntoResponse {
+async fn cmd_show_queue(State(state): State<WebState>) -> impl IntoResponse {
     let mut guard = state.ctx.state.write().await;
-    guard.inner_mut().show_queue_modal = !guard.inner().show_queue_modal;
+    guard.inner_mut().show_view(ModalView::Queue);
     drop(guard);
     let ctx = state.ctx.clone();
     broadcast_patch(&ctx).await;
     StatusCode::NO_CONTENT
 }
 
-async fn cmd_queue_close(State(state): State<WebState>) -> impl IntoResponse {
+async fn cmd_close(State(state): State<WebState>) -> impl IntoResponse {
     let mut guard = state.ctx.state.write().await;
-    guard.inner_mut().show_queue_modal = false;
+    guard.inner_mut().close_view();
     drop(guard);
     let ctx = state.ctx.clone();
     broadcast_patch(&ctx).await;
@@ -436,54 +433,26 @@ async fn build_view(ctx: &AppContext) -> AppView {
         .iter()
         .filter(|image| image.queued_action.is_some())
         .count();
-    let has_root = inner.root_dir.is_some();
     let queue_items = inner
         .images
         .iter()
         .filter_map(|image| {
             let queued = image.queued_action.as_ref()?;
-            let side = match &image.decision {
-                crate::domain::DecisionState::Decided { side, .. } => Some(*side),
-                _ => None,
-            };
-            let arrow = match side {
-                Some(crate::domain::DecisionSide::Left) => "←".to_string(),
-                Some(crate::domain::DecisionSide::Right) => "→".to_string(),
-                None => "•".to_string(),
-            };
-            let action_label = match queued {
-                ActionConfig::Keep => "keep".to_string(),
-                ActionConfig::Delete => "delete".to_string(),
-                ActionConfig::Move { target } => format!("mv {}", target.display()),
-                ActionConfig::Rename { prefix } => {
-                    let ext = image
-                        .path
-                        .extension()
-                        .and_then(|ext| ext.to_str())
-                        .unwrap_or("");
-                    let seq = image.rename_sequence.unwrap_or(0);
-                    if ext.is_empty() {
-                        format!("rename {}{:06}", prefix, seq)
-                    } else {
-                        format!("rename {}{:06}.{}", prefix, seq, ext)
-                    }
-                }
-                ActionConfig::MetadataEdit { key, value } => format!("meta {}={}", key, value),
-            };
-            let file_label = inner
-                .root_dir
-                .as_ref()
-                .and_then(|root| image.path.strip_prefix(root).ok())
-                .unwrap_or(&image.path)
-                .to_string_lossy()
-                .to_string();
-            Some(QueueItem {
-                arrow,
-                action_label,
-                file_label,
-            })
+            queue_item_from_action(image, queued, decision_side(image), inner.root_dir.as_ref())
         })
         .collect();
+    let current_action_item = current.and_then(|image| {
+        let (side, action) = match &image.decision {
+            crate::domain::DecisionState::Decided { side, action } => (Some(*side), action),
+            _ => return None,
+        };
+        queue_item_from_action(image, action, side, inner.root_dir.as_ref())
+    });
+    let image_alignment = match decision_side_from_entry(current) {
+        Some(DecisionSide::Left) => "left".to_string(),
+        Some(DecisionSide::Right) => "right".to_string(),
+        None => "center".to_string(),
+    };
     AppView {
         has_images: current.is_some(),
         image_id: current.map(|entry| entry.id),
@@ -493,13 +462,15 @@ async fn build_view(ctx: &AppContext) -> AppView {
         image_transform: current
             .and_then(|entry| orientation_transform(entry.meta.orientation))
             .unwrap_or_else(|| "".to_string()),
+        image_alignment,
+        current_action_item,
         index,
         total,
         queue_count,
         queue_mode: inner.queue_mode,
-        show_open_modal: inner.show_open_modal || !has_root,
-        show_delete_confirm: inner.pending_delete_confirm,
-        show_queue_modal: inner.show_queue_modal,
+        show_open_modal: inner.has_view(ModalView::OpenDirectory),
+        show_delete_confirm: inner.has_view(ModalView::DeleteConfirm),
+        show_queue_modal: inner.has_view(ModalView::Queue),
         queue_items,
     }
 }
@@ -510,6 +481,8 @@ pub struct AppView {
     pub image_id: Option<u64>,
     pub image_label: String,
     pub image_transform: String,
+    pub image_alignment: String,
+    pub current_action_item: Option<QueueItem>,
     pub index: usize,
     pub total: usize,
     pub queue_count: usize,
@@ -524,7 +497,67 @@ pub struct AppView {
 pub struct QueueItem {
     pub arrow: String,
     pub action_label: String,
+    pub action_tone: String,
     pub file_label: String,
+}
+
+fn decision_side(image: &ImageEntry) -> Option<DecisionSide> {
+    match &image.decision {
+        crate::domain::DecisionState::Decided { side, .. } => Some(*side),
+        _ => None,
+    }
+}
+
+fn decision_side_from_entry(image: Option<&ImageEntry>) -> Option<DecisionSide> {
+    image.and_then(decision_side)
+}
+
+fn queue_item_from_action(
+    image: &ImageEntry,
+    action: &ActionConfig,
+    side: Option<DecisionSide>,
+    root_dir: Option<&PathBuf>,
+) -> Option<QueueItem> {
+    let action_tone = match side {
+        Some(DecisionSide::Left) => "left".to_string(),
+        Some(DecisionSide::Right) => "right".to_string(),
+        None => "neutral".to_string(),
+    };
+    let arrow = match side {
+        Some(DecisionSide::Left) => "←".to_string(),
+        Some(DecisionSide::Right) => "→".to_string(),
+        None => "•".to_string(),
+    };
+    let action_label = match action {
+        ActionConfig::Keep => "keep".to_string(),
+        ActionConfig::Delete => "delete".to_string(),
+        ActionConfig::Move { target } => format!("mv {}", target.display()),
+        ActionConfig::Rename { prefix } => {
+            let ext = image
+                .path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .unwrap_or("");
+            let seq = image.rename_sequence.unwrap_or(0);
+            if ext.is_empty() {
+                format!("rename {}{:06}", prefix, seq)
+            } else {
+                format!("rename {}{:06}.{}", prefix, seq, ext)
+            }
+        }
+        ActionConfig::MetadataEdit { key, value } => format!("meta {}={}", key, value),
+    };
+    let file_label = root_dir
+        .and_then(|root| image.path.strip_prefix(root).ok())
+        .unwrap_or(&image.path)
+        .to_string_lossy()
+        .to_string();
+    Some(QueueItem {
+        arrow,
+        action_label,
+        action_tone,
+        file_label,
+    })
 }
 
 fn orientation_transform(value: Option<u16>) -> Option<String> {

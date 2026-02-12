@@ -3,7 +3,7 @@
         <div class="title">piclr</div>
         <div class="status">
             <span>{{ view.index }} / {{ view.total }}</span>
-            <button class="queue-button" data-on:click="@post('/cmd/queue-toggle')">
+            <button class="queue-button" data-on:click="@post('/cmd/show-queue')">
                 Queued: {{ view.queue_count }}
             </button>
         </div>
@@ -11,9 +11,16 @@
 
     {% if view.has_images %}
     <main class="viewer">
-        <div class="frame">
+        <div class="frame frame-{{ view.image_alignment }}">
             <img src="/image/{{ view.image_id.unwrap_or(0) }}" alt="{{ view.image_label }}" style="transform: {{ view.image_transform }}" />
         </div>
+        {% if let Some(item) = view.current_action_item %}
+        <p class="action-caption queue-entry queue-tone-{{ item.action_tone }}">
+            <span class="queue-arrow">{{ item.arrow }}</span>
+            <span class="queue-action">{{ item.action_label }}</span>
+            <code class="queue-file">{{ item.file_label }}</code>
+        </p>
+        {% endif %}
         <div class="label">{{ view.image_label }}</div>
         <div class="actions">
             <button data-on:click="@post('/cmd/left')">Left</button>
@@ -40,6 +47,7 @@
                 <input type="text" name="path" placeholder="/path/to/images" />
                 <div class="actions">
                     <button type="submit">Open</button>
+                    <button type="button" data-on:click="@post('/cmd/close')">Close</button>
                 </div>
             </form>
         </div>
@@ -52,7 +60,7 @@
             <h2>Delete files?</h2>
             <p>This cannot be undone.</p>
             <div class="actions">
-                <button data-on:click="@post('/cmd/apply-cancel')">No</button>
+                <button data-on:click="@post('/cmd/close')">No</button>
                 <button data-on:click="@post('/cmd/apply-confirm')">Yes</button>
             </div>
         </div>
@@ -66,18 +74,18 @@
             {% if view.queue_items.is_empty() %}
             <p>No queued actions.</p>
             {% else %}
-            <ul class="queue-list">
+            <ul class="queue-log">
                 {% for item in view.queue_items %}
-                <li>
+                <li class="queue-entry queue-tone-{{ item.action_tone }}">
                     <span class="queue-arrow">{{ item.arrow }}</span>
                     <span class="queue-action">{{ item.action_label }}</span>
-                    <span class="queue-file">{{ item.file_label }}</span>
+                    <code class="queue-file">{{ item.file_label }}</code>
                 </li>
                 {% endfor %}
             </ul>
             {% endif %}
             <div class="actions">
-                <button data-on:click="@post('/cmd/queue-close')">Close</button>
+                <button data-on:click="@post('/cmd/close')">Close</button>
             </div>
         </div>
     </div>

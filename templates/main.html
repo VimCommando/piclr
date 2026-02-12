@@ -17,6 +17,9 @@
             if (evt.key === 'ArrowUp' && evt.ctrlKey) { @post('/cmd/jump-prev') }
             if (evt.key === 'ArrowDown' && evt.ctrlKey) { @post('/cmd/jump-next') }
             if ((evt.key === 'o' || evt.key === 'O') && evt.ctrlKey) { @post('/cmd/open') }
+            if (evt.key === 'u' || evt.key === 'U') { @post('/cmd/undo') }
+            if (evt.key === 'q' || evt.key === 'Q') { @post('/cmd/show-queue') }
+            if (evt.key === 'Escape') { @post('/cmd/close') }
         "
     >
         {% include "app.html" %}

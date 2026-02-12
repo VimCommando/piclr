@@ -13,6 +13,8 @@ use piclr::web::router;
 #[command(name = "piclr", version, about = "Picture Left/Right")]
 struct Cli {
     path: Option<PathBuf>,
+    #[arg(long)]
+    port: Option<u16>,
 }
 
 #[tokio::main]
@@ -23,9 +25,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let cli = Cli::parse();
+    let Cli { path, port } = cli;
 
     let config = AppConfig {
-        initial_path: cli.path.clone(),
+        initial_path: path.clone(),
         ..Default::default()
     };
 
@@ -36,7 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let ctx = AppContext::new(state, config);
 
-    if let Some(path) = cli.path {
+    if let Some(path) = path {
         let images = scan_images(&path).await;
         let mut guard = ctx.state.write().await;
         guard.transition_to_scanning();
@@ -45,7 +48,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let app = router(ctx);
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let bind_port = port.unwrap_or(0);
+    let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{bind_port}")).await?;
     let addr: SocketAddr = listener.local_addr()?;
     let url = format!("http://{}", addr);
     tracing::info!("Listening on {}", url);

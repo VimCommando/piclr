@@ -4,6 +4,10 @@
     --text: #f4f4f4;
     --muted: #9aa3b2;
     --accent: #ffb347;
+    --soft-red: #f1b6be;
+    --soft-red-bg: rgba(241, 182, 190, 0.12);
+    --soft-green: #b9e7c6;
+    --soft-green-bg: rgba(185, 231, 198, 0.12);
 }
 
 * {
@@ -75,6 +79,18 @@ body {
     overflow: hidden;
 }
 
+.frame-left {
+    justify-content: flex-start;
+}
+
+.frame-right {
+    justify-content: flex-end;
+}
+
+.frame-center {
+    justify-content: center;
+}
+
 .frame img {
     max-width: 100%;
     max-height: 100%;
@@ -135,6 +151,11 @@ body {
     border-radius: 16px;
     width: min(90vw, 420px);
     text-align: center;
+    max-height: min(90vh, 760px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    gap: 12px;
 }
 
 .modal-wide {
@@ -142,44 +163,84 @@ body {
     text-align: left;
 }
 
-.queue-list {
+.queue-log {
     list-style: none;
     padding: 0;
-    margin: 16px 0;
-    display: grid;
-    gap: 12px;
+    margin: 0;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(0, 0, 0, 0.2);
+    overflow-y: auto;
+    min-height: 0;
+    max-height: 50vh;
+    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
 }
 
-.queue-list li {
+.queue-entry {
     display: grid;
-    grid-template-columns: 40px 180px 1fr;
+    grid-template-columns: 32px 150px 1fr;
     align-items: center;
-    gap: 12px;
-    padding: 10px 12px;
-    border-radius: 12px;
-    background: rgba(255, 255, 255, 0.04);
+    gap: 8px;
+    padding: 7px 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    background: transparent;
+}
+
+.queue-entry:last-child {
+    border-bottom: none;
+}
+
+.action-caption {
+    margin: 0;
+    width: min(90vw, 900px);
+    border-radius: 10px;
+    border-bottom: none;
 }
 
 .queue-arrow {
-    font-size: 18px;
+    font-size: 14px;
+    color: var(--muted);
 }
 
 .queue-action {
-    color: var(--accent);
-    font-weight: 600;
+    color: var(--muted);
+    font-weight: 500;
+    text-transform: lowercase;
 }
 
 .queue-file {
     color: var(--muted);
-    font-size: 13px;
+    font-size: 12px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    margin: 0;
+    padding: 0;
+    background: none;
+}
+
+.queue-tone-left .queue-action {
+    color: var(--soft-red);
+}
+
+.queue-tone-left {
+    background: var(--soft-red-bg);
+}
+
+.queue-tone-right .queue-action {
+    color: var(--soft-green);
+}
+
+.queue-tone-right {
+    background: var(--soft-green-bg);
+}
+
+.modal-card .actions {
+    flex-shrink: 0;
 }
 
 .modal-card input {
     width: 100%;
-    margin-top: 12px;
     padding: 10px 12px;
     border-radius: 10px;
     border: 1px solid rgba(255, 255, 255, 0.1);

@@ -47,9 +47,14 @@ pub struct AppStateInner {
     pub preload: PreloadState,
     pub rename_counter: u64,
     pub root_dir: Option<PathBuf>,
-    pub pending_delete_confirm: bool,
-    pub show_open_modal: bool,
-    pub show_queue_modal: bool,
+    pub view_stack: Vec<ModalView>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ModalView {
+    OpenDirectory,
+    DeleteConfirm,
+    Queue,
 }
 
 impl AppStateInner {
@@ -65,9 +70,7 @@ impl AppStateInner {
             preload: PreloadState::default(),
             rename_counter: 1,
             root_dir: None,
-            pending_delete_confirm: false,
-            show_open_modal: false,
-            show_queue_modal: false,
+            view_stack: Vec::new(),
         }
     }
 
@@ -224,6 +227,23 @@ impl AppStateInner {
             return Some(undo);
         }
         None
+    }
+
+    pub fn show_view(&mut self, view: ModalView) {
+        self.view_stack.retain(|existing| *existing != view);
+        self.view_stack.push(view);
+    }
+
+    pub fn close_view(&mut self) -> Option<ModalView> {
+        self.view_stack.pop()
+    }
+
+    pub fn hide_view(&mut self, view: ModalView) {
+        self.view_stack.retain(|existing| *existing != view);
+    }
+
+    pub fn has_view(&self, view: ModalView) -> bool {
+        self.view_stack.contains(&view)
     }
 
     fn update_preload(&mut self) {
