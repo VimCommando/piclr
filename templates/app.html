@@ -2,17 +2,34 @@
     <header class="topbar">
         <div class="title">piclr</div>
         <div class="status">
-            <span>{{ view.index }} / {{ view.total }}</span>
-            <button class="queue-button" data-on:click="@post('/cmd/show-queue')">
+            <button
+                class="counter-button"
+                data-on:click="@post('/cmd/show-files')"
+            >
+                Image: {% if view.total > 0 %} {{ view.index }} / {{ view.total
+                }} {% else %} 0 / 0 {% endif %}
+            </button>
+            <button
+                class="queue-button"
+                data-on:click="@post('/cmd/show-queue')"
+            >
                 Queued: {{ view.queue_count }}
             </button>
         </div>
-    </header>
+</header>
+
+    {% if view.show_open_modal || view.show_delete_confirm || view.show_files_modal || view.show_help_modal || view.show_queue_modal %}
+    <div class="modal-backdrop"></div>
+    {% endif %}
 
     {% if view.has_images %}
     <main class="viewer">
         <div class="frame frame-{{ view.image_alignment }}">
-            <img src="/image/{{ view.image_id.unwrap_or(0) }}" alt="{{ view.image_label }}" style="transform: {{ view.image_transform }}" />
+            <img
+                src="/image/{{ view.image_id.unwrap_or(0) }}"
+                alt="{{ view.image_label }}"
+                style="transform: {{ view.image_transform }}"
+            />
         </div>
         {% if let Some(item) = view.current_action_item %}
         <p class="action-caption queue-entry queue-tone-{{ item.action_tone }}">
@@ -21,14 +38,25 @@
             <code class="queue-file">{{ item.file_label }}</code>
         </p>
         {% endif %}
-        <div class="label">{{ view.image_label }}</div>
         <div class="actions">
-            <button data-on:click="@post('/cmd/left')">Left</button>
-            <button data-on:click="@post('/cmd/right')">Right</button>
-            <button data-on:click="@post('/cmd/prev')">Prev</button>
-            <button data-on:click="@post('/cmd/next')">Next</button>
-            <button data-on:click="@post('/cmd/undo')">Undo</button>
-            <button data-on:click="@post('/cmd/apply')">Apply</button>
+            <button data-on:click="@post('/cmd/left')">
+                <glyph>←</glyph>Left
+            </button>
+            <button data-on:click="@post('/cmd/next')">
+                <glyph>↓</glyph>Next
+            </button>
+            <button data-on:click="@post('/cmd/prev')">
+                <glyph>↑</glyph>Prev
+            </button>
+            <button data-on:click="@post('/cmd/right')">
+                <glyph>→</glyph>Right
+            </button>
+            <button data-on:click="@post('/cmd/undo')">
+                <glyph>↶</glyph>Undo
+            </button>
+            <button data-on:click="@post('/cmd/apply')">
+                <glyph>↩</glyph>Apply
+            </button>
         </div>
     </main>
     {% else %}
@@ -36,10 +64,8 @@
         <p>No images loaded.</p>
         <button data-on:click="@post('/cmd/open')">Open Folder</button>
     </main>
-    {% endif %}
-
-    {% if view.show_open_modal %}
-    <div class="modal">
+    {% endif %} {% if view.show_open_modal %}
+    <div class="modal" style="z-index: {{ view.open_modal_z }}" data-on:click="if (evt.target === evt.currentTarget) { @post('/cmd/close') }">
         <div class="modal-card">
             <h2>Select a folder</h2>
             <p>Use the CLI path or enter a directory here.</p>
@@ -47,15 +73,15 @@
                 <input type="text" name="path" placeholder="/path/to/images" />
                 <div class="actions">
                     <button type="submit">Open</button>
-                    <button type="button" data-on:click="@post('/cmd/close')">Close</button>
+                    <button type="button" data-on:click="@post('/cmd/close')">
+                        Close
+                    </button>
                 </div>
             </form>
         </div>
     </div>
-    {% endif %}
-
-    {% if view.show_delete_confirm %}
-    <div class="modal">
+    {% endif %} {% if view.show_delete_confirm %}
+    <div class="modal" style="z-index: {{ view.delete_modal_z }}" data-on:click="if (evt.target === evt.currentTarget) { @post('/cmd/close') }">
         <div class="modal-card">
             <h2>Delete files?</h2>
             <p>This cannot be undone.</p>
@@ -65,10 +91,133 @@
             </div>
         </div>
     </div>
-    {% endif %}
-
-    {% if view.show_queue_modal %}
-    <div class="modal">
+    {% endif %} {% if view.show_files_modal %}
+    <div class="modal" style="z-index: {{ view.files_modal_z }}" data-on:click="if (evt.target === evt.currentTarget) { @post('/cmd/close') }">
+        <div class="modal-card modal-wide">
+            <h2>Images</h2>
+            {% if view.file_count == 0 %}
+            <p>No files loaded.</p>
+            {% else %}
+            <ul class="queue-log">
+                {% for item in view.file_items %}
+                <li
+                    class="queue-entry queue-tone-{{ item.action_tone }}"
+                    data-on:click="@post('/cmd/select/{{ item.image_id }}')"
+                >
+                    <span class="queue-arrow">{{ item.arrow }}</span>
+                    <span class="queue-action">{{ item.action_label }}</span>
+                    <code class="queue-file">{{ item.file_label }}</code>
+                </li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+            <div class="actions">
+                <button data-on:click="@post('/cmd/close')">Close</button>
+            </div>
+        </div>
+    </div>
+    {% endif %} {% if view.show_help_modal %}
+    <div class="modal" style="z-index: {{ view.help_modal_z }}" data-on:click="if (evt.target === evt.currentTarget) { @post('/cmd/close') }">
+        <div class="modal-card modal-wide">
+            <h2>Key Bindings</h2>
+            <div class="help-scroll">
+                <section class="help-section">
+                    <h3>Movement</h3>
+                    <ul class="help-list">
+                        <li>
+                            <span class="help-key">↑</span
+                            ><span class="help-desc">Previous image</span>
+                        </li>
+                        <li>
+                            <span class="help-key">↓</span
+                            ><span class="help-desc">Next image</span>
+                        </li>
+                        <li>
+                            <span class="help-key">Shift + ↑</span
+                            ><span class="help-desc"
+                                >Jump to previous undecided</span
+                            >
+                        </li>
+                        <li>
+                            <span class="help-key">Shift + ↓</span
+                            ><span class="help-desc"
+                                >Jump to next undecided</span
+                            >
+                        </li>
+                        <li>
+                            <span class="help-key">Shift + K / J</span
+                            ><span class="help-desc"
+                                >Jump to previous / next undecided</span
+                            >
+                        </li>
+                        <li>
+                            <span class="help-key">J / K</span
+                            ><span class="help-desc"
+                                >Next / previous image</span
+                            >
+                        </li>
+                    </ul>
+                </section>
+                <section class="help-section">
+                    <h3>Actions</h3>
+                    <ul class="help-list">
+                        <li>
+                            <span class="help-key">←</span
+                            ><span class="help-desc">Apply left action</span>
+                        </li>
+                        <li>
+                            <span class="help-key">→</span
+                            ><span class="help-desc">Apply right action</span>
+                        </li>
+                        <li>
+                            <span class="help-key">H / L</span
+                            ><span class="help-desc"
+                                >Apply left / right action</span
+                            >
+                        </li>
+                        <li>
+                            <span class="help-key">U</span
+                            ><span class="help-desc">Undo last command</span>
+                        </li>
+                        <li>
+                            <span class="help-key">↩</span
+                            ><span class="help-desc">Apply queued actions</span>
+                        </li>
+                    </ul>
+                </section>
+                <section class="help-section">
+                    <h3>Modals</h3>
+                    <ul class="help-list">
+                        <li>
+                            <span class="help-key">Q</span
+                            ><span class="help-desc">Show queued actions</span>
+                        </li>
+                        <li>
+                            <span class="help-key">I</span
+                            ><span class="help-desc">Show image list</span>
+                        </li>
+                        <li>
+                            <span class="help-key">?</span
+                            ><span class="help-desc">Show help</span>
+                        </li>
+                        <li>
+                            <span class="help-key">Esc</span
+                            ><span class="help-desc">Close top modal</span>
+                        </li>
+                        <li>
+                            <span class="help-key">Ctrl + O</span
+                            ><span class="help-desc">Open directory</span>
+                        </li>
+                    </ul>
+                </section>
+            </div>
+            <div class="actions">
+                <button data-on:click="@post('/cmd/close')">Close</button>
+            </div>
+        </div>
+    </div>
+    {% endif %} {% if view.show_queue_modal %}
+    <div class="modal" style="z-index: {{ view.queue_modal_z }}" data-on:click="if (evt.target === evt.currentTarget) { @post('/cmd/close') }">
         <div class="modal-card modal-wide">
             <h2>Queued actions</h2>
             {% if view.queue_items.is_empty() %}
@@ -76,7 +225,10 @@
             {% else %}
             <ul class="queue-log">
                 {% for item in view.queue_items %}
-                <li class="queue-entry queue-tone-{{ item.action_tone }}">
+                <li
+                    class="queue-entry queue-tone-{{ item.action_tone }}"
+                    data-on:click="@post('/cmd/select/{{ item.image_id }}')"
+                >
                     <span class="queue-arrow">{{ item.arrow }}</span>
                     <span class="queue-action">{{ item.action_label }}</span>
                     <code class="queue-file">{{ item.file_label }}</code>

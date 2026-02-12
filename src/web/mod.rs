@@ -5,7 +5,7 @@ use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{Html, IntoResponse, Response, Sse};
 use axum::response::sse::{Event, KeepAlive};
-use axum::routing::{get, post};
+use axum::routing::{get, patch, post};
 use axum::Router;
 use asynk_strim::{stream_fn, Yielder};
 use core::convert::Infallible;
@@ -45,8 +45,11 @@ pub fn router(ctx: AppContext) -> Router {
         .route("/cmd/apply-confirm", post(cmd_apply_confirm))
         .route("/cmd/open", post(cmd_open))
         .route("/cmd/show-queue", post(cmd_show_queue))
+        .route("/cmd/show-files", post(cmd_show_files))
+        .route("/cmd/help", post(cmd_help))
+        .route("/cmd/select/{id}", post(cmd_select))
         .route("/cmd/close", post(cmd_close))
-        .route("/events", get(events))
+        .route("/events", patch(events))
         .route("/image/{id}", get(image))
         .route("/assets/datastar.js", get(datastar_js))
         .route("/assets/app.css", get(app_css))
@@ -216,7 +219,12 @@ async fn cmd_open(
         guard.inner_mut().hide_view(ModalView::OpenDirectory);
     } else {
         let mut guard = state.ctx.state.write().await;
-        guard.inner_mut().show_view(ModalView::OpenDirectory);
+        let inner = guard.inner_mut();
+        if inner.view_stack.last().copied() == Some(ModalView::OpenDirectory) {
+            inner.close_view();
+        } else {
+            inner.show_view(ModalView::OpenDirectory);
+        }
     }
     let ctx = state.ctx.clone();
     broadcast_patch(&ctx).await;
@@ -225,11 +233,61 @@ async fn cmd_open(
 
 async fn cmd_show_queue(State(state): State<WebState>) -> impl IntoResponse {
     let mut guard = state.ctx.state.write().await;
-    guard.inner_mut().show_view(ModalView::Queue);
+    let inner = guard.inner_mut();
+    if inner.view_stack.last().copied() == Some(ModalView::Queue) {
+        inner.close_view();
+    } else {
+        inner.show_view(ModalView::Queue);
+    }
     drop(guard);
     let ctx = state.ctx.clone();
     broadcast_patch(&ctx).await;
     StatusCode::NO_CONTENT
+}
+
+async fn cmd_show_files(State(state): State<WebState>) -> impl IntoResponse {
+    let mut guard = state.ctx.state.write().await;
+    let inner = guard.inner_mut();
+    if inner.view_stack.last().copied() == Some(ModalView::Files) {
+        inner.close_view();
+    } else {
+        inner.show_view(ModalView::Files);
+    }
+    drop(guard);
+    let ctx = state.ctx.clone();
+    broadcast_patch(&ctx).await;
+    StatusCode::NO_CONTENT
+}
+
+async fn cmd_help(State(state): State<WebState>) -> impl IntoResponse {
+    let mut guard = state.ctx.state.write().await;
+    let inner = guard.inner_mut();
+    if inner.view_stack.last().copied() == Some(ModalView::Help) {
+        inner.close_view();
+    } else {
+        inner.show_view(ModalView::Help);
+    }
+    drop(guard);
+    let ctx = state.ctx.clone();
+    broadcast_patch(&ctx).await;
+    StatusCode::NO_CONTENT
+}
+
+async fn cmd_select(State(state): State<WebState>, Path(id): Path<u64>) -> impl IntoResponse {
+    let mut guard = state.ctx.state.write().await;
+    let selected = guard.inner_mut().select_image_by_id(id);
+    if selected {
+        guard.inner_mut().hide_view(ModalView::Queue);
+        guard.inner_mut().hide_view(ModalView::Files);
+    }
+    drop(guard);
+    let ctx = state.ctx.clone();
+    broadcast_patch(&ctx).await;
+    if selected {
+        StatusCode::NO_CONTENT
+    } else {
+        StatusCode::NOT_FOUND
+    }
 }
 
 async fn cmd_close(State(state): State<WebState>) -> impl IntoResponse {
@@ -433,20 +491,42 @@ async fn build_view(ctx: &AppContext) -> AppView {
         .iter()
         .filter(|image| image.queued_action.is_some())
         .count();
+    let file_count = inner.images.len();
+    let queue_modal_z = modal_layer(&inner.view_stack, ModalView::Queue);
+    let files_modal_z = modal_layer(&inner.view_stack, ModalView::Files);
+    let help_modal_z = modal_layer(&inner.view_stack, ModalView::Help);
+    let open_modal_z = modal_layer(&inner.view_stack, ModalView::OpenDirectory);
+    let delete_modal_z = modal_layer(&inner.view_stack, ModalView::DeleteConfirm);
     let queue_items = inner
         .images
         .iter()
         .filter_map(|image| {
             let queued = image.queued_action.as_ref()?;
-            queue_item_from_action(image, queued, decision_side(image), inner.root_dir.as_ref())
+            Some(queue_item_from_action(
+                image,
+                queued,
+                decision_side(image),
+                inner.root_dir.as_ref(),
+            ))
         })
         .collect();
-    let current_action_item = current.and_then(|image| {
-        let (side, action) = match &image.decision {
-            crate::domain::DecisionState::Decided { side, action } => (Some(*side), action),
-            _ => return None,
-        };
-        queue_item_from_action(image, action, side, inner.root_dir.as_ref())
+    let file_items = inner
+        .images
+        .iter()
+        .map(|image| match &image.decision {
+            crate::domain::DecisionState::Decided { side, action } => {
+                queue_item_from_action(image, action, Some(*side), inner.root_dir.as_ref())
+            }
+            crate::domain::DecisionState::Undecided => queue_item_none(image, inner.root_dir.as_ref()),
+        })
+        .collect();
+    let current_action_item = current.map(|image| match &image.decision {
+        crate::domain::DecisionState::Decided { side, action } => {
+            queue_item_from_action(image, action, Some(*side), inner.root_dir.as_ref())
+        }
+        crate::domain::DecisionState::Undecided => {
+            queue_item_none(image, inner.root_dir.as_ref())
+        }
     });
     let image_alignment = match decision_side_from_entry(current) {
         Some(DecisionSide::Left) => "left".to_string(),
@@ -467,11 +547,20 @@ async fn build_view(ctx: &AppContext) -> AppView {
         index,
         total,
         queue_count,
+        file_count,
         queue_mode: inner.queue_mode,
         show_open_modal: inner.has_view(ModalView::OpenDirectory),
         show_delete_confirm: inner.has_view(ModalView::DeleteConfirm),
         show_queue_modal: inner.has_view(ModalView::Queue),
+        show_files_modal: inner.has_view(ModalView::Files),
+        show_help_modal: inner.has_view(ModalView::Help),
+        open_modal_z,
+        delete_modal_z,
+        queue_modal_z,
+        files_modal_z,
+        help_modal_z,
         queue_items,
+        file_items,
     }
 }
 
@@ -486,15 +575,25 @@ pub struct AppView {
     pub index: usize,
     pub total: usize,
     pub queue_count: usize,
+    pub file_count: usize,
     pub queue_mode: bool,
     pub show_open_modal: bool,
     pub show_delete_confirm: bool,
     pub show_queue_modal: bool,
+    pub show_files_modal: bool,
+    pub show_help_modal: bool,
+    pub open_modal_z: usize,
+    pub delete_modal_z: usize,
+    pub queue_modal_z: usize,
+    pub files_modal_z: usize,
+    pub help_modal_z: usize,
     pub queue_items: Vec<QueueItem>,
+    pub file_items: Vec<QueueItem>,
 }
 
 #[derive(Clone, Debug)]
 pub struct QueueItem {
+    pub image_id: u64,
     pub arrow: String,
     pub action_label: String,
     pub action_tone: String,
@@ -517,7 +616,7 @@ fn queue_item_from_action(
     action: &ActionConfig,
     side: Option<DecisionSide>,
     root_dir: Option<&PathBuf>,
-) -> Option<QueueItem> {
+) -> QueueItem {
     let action_tone = match side {
         Some(DecisionSide::Left) => "left".to_string(),
         Some(DecisionSide::Right) => "right".to_string(),
@@ -529,9 +628,9 @@ fn queue_item_from_action(
         None => "•".to_string(),
     };
     let action_label = match action {
-        ActionConfig::Keep => "keep".to_string(),
-        ActionConfig::Delete => "delete".to_string(),
-        ActionConfig::Move { target } => format!("mv {}", target.display()),
+        ActionConfig::Keep => "Keep".to_string(),
+        ActionConfig::Delete => "Delete".to_string(),
+        ActionConfig::Move { target } => format!("Move {}", target.display()),
         ActionConfig::Rename { prefix } => {
             let ext = image
                 .path
@@ -540,24 +639,49 @@ fn queue_item_from_action(
                 .unwrap_or("");
             let seq = image.rename_sequence.unwrap_or(0);
             if ext.is_empty() {
-                format!("rename {}{:06}", prefix, seq)
+                format!("Rename {}{:06}", prefix, seq)
             } else {
-                format!("rename {}{:06}.{}", prefix, seq, ext)
+                format!("Rename {}{:06}.{}", prefix, seq, ext)
             }
         }
-        ActionConfig::MetadataEdit { key, value } => format!("meta {}={}", key, value),
+        ActionConfig::MetadataEdit { key, value } => format!("Metadata {}={}", key, value),
     };
     let file_label = root_dir
         .and_then(|root| image.path.strip_prefix(root).ok())
         .unwrap_or(&image.path)
         .to_string_lossy()
         .to_string();
-    Some(QueueItem {
+    QueueItem {
+        image_id: image.id,
         arrow,
         action_label,
         action_tone,
         file_label,
-    })
+    }
+}
+
+fn queue_item_none(image: &ImageEntry, root_dir: Option<&PathBuf>) -> QueueItem {
+    let file_label = root_dir
+        .and_then(|root| image.path.strip_prefix(root).ok())
+        .unwrap_or(&image.path)
+        .to_string_lossy()
+        .to_string();
+    QueueItem {
+        image_id: image.id,
+        arrow: "•".to_string(),
+        action_label: "None".to_string(),
+        action_tone: "neutral".to_string(),
+        file_label,
+    }
+}
+
+fn modal_layer(stack: &[ModalView], view: ModalView) -> usize {
+    let base = 1000usize;
+    stack
+        .iter()
+        .position(|entry| *entry == view)
+        .map(|idx| base + idx)
+        .unwrap_or(0)
 }
 
 fn orientation_transform(value: Option<u16>) -> Option<String> {

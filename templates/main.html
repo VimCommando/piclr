@@ -8,17 +8,25 @@
         <script type="module" src="/assets/datastar.js"></script>
     </head>
     <body
-        data-init="@get('/events', { openWhenHidden: true })"
+        data-init="@patch('/events', { openWhenHidden: true })"
         data-on:keydown__prevent="
             if (evt.key === 'ArrowLeft') { @post('/cmd/left') }
             if (evt.key === 'ArrowRight') { @post('/cmd/right') }
-            if (evt.key === 'ArrowUp' && !evt.ctrlKey) { @post('/cmd/prev') }
-            if (evt.key === 'ArrowDown' && !evt.ctrlKey) { @post('/cmd/next') }
-            if (evt.key === 'ArrowUp' && evt.ctrlKey) { @post('/cmd/jump-prev') }
-            if (evt.key === 'ArrowDown' && evt.ctrlKey) { @post('/cmd/jump-next') }
+            if (evt.key === 'h' || evt.key === 'H') { @post('/cmd/left') }
+            if (evt.key === 'l' || evt.key === 'L') { @post('/cmd/right') }
+            if (evt.key === 'j' || evt.key === 'J') { @post('/cmd/next') }
+            if (evt.key === 'k' || evt.key === 'K') { @post('/cmd/prev') }
+            if (evt.key === 'ArrowUp' && evt.shiftKey) { @post('/cmd/jump-prev') }
+            if (evt.key === 'ArrowDown' && evt.shiftKey) { @post('/cmd/jump-next') }
+            if (evt.key === 'J' && evt.shiftKey) { @post('/cmd/jump-next') }
+            if (evt.key === 'K' && evt.shiftKey) { @post('/cmd/jump-prev') }
+            if (evt.key === 'ArrowUp' && !evt.shiftKey) { @post('/cmd/prev') }
+            if (evt.key === 'ArrowDown' && !evt.shiftKey) { @post('/cmd/next') }
             if ((evt.key === 'o' || evt.key === 'O') && evt.ctrlKey) { @post('/cmd/open') }
             if (evt.key === 'u' || evt.key === 'U') { @post('/cmd/undo') }
             if (evt.key === 'q' || evt.key === 'Q') { @post('/cmd/show-queue') }
+            if (evt.key === 'i' || evt.key === 'I') { @post('/cmd/show-files') }
+            if (evt.key === '?') { @post('/cmd/help') }
             if (evt.key === 'Escape') { @post('/cmd/close') }
         "
     >

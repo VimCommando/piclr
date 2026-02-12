@@ -254,7 +254,7 @@ async fn read_orientation(_path: &Path) -> Option<u16> {
 }
 
 fn supported_extensions() -> HashSet<&'static str> {
-    ["jpg", "jpeg", "png", "gif", "webp", "heic"]
+    ["jpg", "jpeg", "png", "gif", "webp", "heic", "svg"]
         .into_iter()
         .collect()
 }

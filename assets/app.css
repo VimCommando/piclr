@@ -1,13 +1,20 @@
 :root {
-    --bg: #0f1217;
-    --panel: #1b1f27;
-    --text: #f4f4f4;
-    --muted: #9aa3b2;
-    --accent: #ffb347;
+    --bg: #0a1220;
+    --panel: #142238;
+    --panel-strong: #0f1b2f;
+    --text: #e8f0ff;
+    --muted: #9ab2d8;
+    --status-text: #c4dafb;
+    --accent: #2aa198;
     --soft-red: #f1b6be;
     --soft-red-bg: rgba(241, 182, 190, 0.12);
     --soft-green: #b9e7c6;
     --soft-green-bg: rgba(185, 231, 198, 0.12);
+    --space-1: 6px;
+    --space-2: 10px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 24px;
 }
 
 * {
@@ -17,7 +24,7 @@
 body {
     margin: 0;
     font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
-    background: radial-gradient(circle at top, #1c2330, #0b0e13 70%);
+    background: var(--bg);
     color: var(--text);
 }
 
@@ -31,8 +38,8 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 16px 24px;
-    background: rgba(20, 23, 30, 0.85);
+    padding: var(--space-4) var(--space-5);
+    background: var(--panel-strong);
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -44,15 +51,16 @@ body {
 
 .status {
     display: flex;
-    gap: 16px;
-    color: var(--muted);
+    gap: var(--space-4);
+    color: var(--status-text);
     font-size: 14px;
 }
 
-.queue-button {
+.queue-button,
+.counter-button {
     border: none;
     background: transparent;
-    color: var(--muted);
+    color: var(--status-text);
     cursor: pointer;
     font-size: 14px;
     padding: 0;
@@ -63,8 +71,8 @@ body {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 16px;
-    padding: 24px;
+    gap: var(--space-4);
+    padding: var(--space-5);
 }
 
 .frame {
@@ -104,7 +112,7 @@ body {
 
 .actions {
     display: flex;
-    gap: 12px;
+    gap: var(--space-3);
     flex-wrap: wrap;
     justify-content: center;
 }
@@ -117,7 +125,14 @@ body {
     color: var(--text);
     cursor: pointer;
     font-size: 14px;
-    transition: transform 0.2s ease, background 0.2s ease;
+    transition:
+        transform 0.2s ease,
+        background 0.2s ease;
+}
+
+glyph {
+    display: inline-block;
+    margin-right: 6px;
 }
 
 .actions button:hover {
@@ -139,15 +154,21 @@ body {
 .modal {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.55);
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 999;
+    background: rgba(0, 0, 0, 0.55);
+}
+
 .modal-card {
     background: var(--panel);
-    padding: 24px;
+    padding: var(--space-5);
     border-radius: 16px;
     width: min(90vw, 420px);
     text-align: center;
@@ -155,7 +176,7 @@ body {
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    gap: 12px;
+    gap: var(--space-3);
 }
 
 .modal-wide {
@@ -180,10 +201,19 @@ body {
     display: grid;
     grid-template-columns: 32px 150px 1fr;
     align-items: center;
-    gap: 8px;
-    padding: 7px 10px;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-2);
     border-bottom: 1px solid rgba(255, 255, 255, 0.06);
     background: transparent;
+    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+
+.queue-log .queue-entry:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.queue-log .queue-entry {
+    cursor: pointer;
 }
 
 .queue-entry:last-child {
@@ -205,7 +235,7 @@ body {
 .queue-action {
     color: var(--muted);
     font-weight: 500;
-    text-transform: lowercase;
+    font-family: inherit;
 }
 
 .queue-file {
@@ -233,6 +263,59 @@ body {
 
 .queue-tone-right {
     background: var(--soft-green-bg);
+}
+
+.queue-tone-neutral .queue-action {
+    color: var(--muted);
+}
+
+.queue-tone-neutral {
+    background: rgba(154, 163, 178, 0.1);
+}
+
+.help-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: var(--space-1);
+    color: var(--muted);
+    font-size: 14px;
+}
+
+.help-section {
+    margin: 0;
+}
+
+.help-section h3 {
+    margin: 0 0 6px 0;
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text);
+}
+
+.help-scroll {
+    overflow-y: auto;
+    max-height: 50vh;
+    padding-right: var(--space-1);
+}
+
+.help-list li {
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    align-items: baseline;
+    gap: 12px;
+}
+
+.help-key {
+    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    color: var(--text);
+    text-align: right;
+}
+
+.help-desc {
+    color: var(--muted);
 }
 
 .modal-card .actions {

@@ -55,6 +55,8 @@ pub enum ModalView {
     OpenDirectory,
     DeleteConfirm,
     Queue,
+    Files,
+    Help,
 }
 
 impl AppStateInner {
@@ -152,6 +154,19 @@ impl AppStateInner {
             self.cursor = position;
             self.update_preload();
         }
+    }
+
+    pub fn select_image_by_id(&mut self, image_id: u64) -> bool {
+        if let Some(position) = self
+            .order
+            .iter()
+            .position(|idx| self.images[*idx].id == image_id)
+        {
+            self.cursor = position;
+            self.update_preload();
+            return true;
+        }
+        false
     }
 
     pub fn apply_decision(&mut self, side: DecisionSide) -> Option<DecisionOutcome> {
