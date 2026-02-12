@@ -55,14 +55,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Listening on {}", url);
 
     #[cfg(feature = "tauri")]
-    if std::env::var("PICLR_TAURI").is_ok() {
+    {
         let server = tokio::spawn(async move { axum::serve(listener, app).await });
-        let _ = piclr::tauri_shell::launch(url);
-        let _ = server.await;
+        piclr::tauri_shell::launch(url)?;
+        server.abort();
         return Ok(());
     }
 
-    axum::serve(listener, app).await?;
-
-    Ok(())
+    #[cfg(not(feature = "tauri"))]
+    {
+        axum::serve(listener, app).await?;
+        Ok(())
+    }
 }
