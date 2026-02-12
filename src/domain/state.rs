@@ -48,6 +48,8 @@ pub struct AppStateInner {
     pub rename_counter: u64,
     pub root_dir: Option<PathBuf>,
     pub pending_delete_confirm: bool,
+    pub show_open_modal: bool,
+    pub show_queue_modal: bool,
 }
 
 impl AppStateInner {
@@ -64,6 +66,8 @@ impl AppStateInner {
             rename_counter: 1,
             root_dir: None,
             pending_delete_confirm: false,
+            show_open_modal: false,
+            show_queue_modal: false,
         }
     }
 

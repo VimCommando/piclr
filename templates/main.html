@@ -5,19 +5,20 @@
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>piclr</title>
         <link rel="stylesheet" href="/assets/app.css" />
+        <script type="module" src="/assets/datastar.js"></script>
     </head>
     <body
-        data-on:keydown.window="
-            if ($event.key === 'ArrowLeft') { @post('/cmd/left') }
-            if ($event.key === 'ArrowRight') { @post('/cmd/right') }
-            if ($event.key === 'ArrowUp' && !$event.ctrlKey) { @post('/cmd/prev') }
-            if ($event.key === 'ArrowDown' && !$event.ctrlKey) { @post('/cmd/next') }
-            if ($event.key === 'ArrowUp' && $event.ctrlKey) { @post('/cmd/jump-prev') }
-            if ($event.key === 'ArrowDown' && $event.ctrlKey) { @post('/cmd/jump-next') }
-            if ($event.key === 'o' && $event.ctrlKey) { @post('/cmd/open') }
+        data-init="@get('/events', { openWhenHidden: true })"
+        data-on:keydown__prevent="
+            if (evt.key === 'ArrowLeft') { @post('/cmd/left') }
+            if (evt.key === 'ArrowRight') { @post('/cmd/right') }
+            if (evt.key === 'ArrowUp' && !evt.ctrlKey) { @post('/cmd/prev') }
+            if (evt.key === 'ArrowDown' && !evt.ctrlKey) { @post('/cmd/next') }
+            if (evt.key === 'ArrowUp' && evt.ctrlKey) { @post('/cmd/jump-prev') }
+            if (evt.key === 'ArrowDown' && evt.ctrlKey) { @post('/cmd/jump-next') }
+            if ((evt.key === 'o' || evt.key === 'O') && evt.ctrlKey) { @post('/cmd/open') }
         "
     >
         {% include "app.html" %}
-        <script type="module" src="/assets/datastar.js"></script>
     </body>
 </html>

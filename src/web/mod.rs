@@ -1,14 +1,25 @@
 use std::path::PathBuf;
 use askama::Template;
-use axum::extract::{Form, Path, State};
+use axum::body::Bytes as BodyBytes;
+use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
-use axum::response::{Html, IntoResponse, Response};
+use axum::response::{Html, IntoResponse, Response, Sse};
+use axum::response::sse::{Event, KeepAlive};
 use axum::routing::{get, post};
 use axum::Router;
+use asynk_strim::{stream_fn, Yielder};
+use core::convert::Infallible;
 use bytes::Bytes;
 use mime_guess::MimeGuess;
 use tracing::warn;
 use serde::Deserialize;
+use datastar::prelude::{ElementPatchMode, PatchElements};
+use tokio::sync::broadcast;
+
+#[derive(Deserialize)]
+struct OpenForm {
+    path: String,
+}
 
 use crate::app::AppContext;
 use crate::domain::{ActionConfig, DecisionSide};
@@ -34,7 +45,10 @@ pub fn router(ctx: AppContext) -> Router {
         .route("/cmd/apply-confirm", post(cmd_apply_confirm))
         .route("/cmd/apply-cancel", post(cmd_apply_cancel))
         .route("/cmd/open", post(cmd_open))
-        .route("/image/:id", get(image))
+        .route("/cmd/queue-toggle", post(cmd_queue_toggle))
+        .route("/cmd/queue-close", post(cmd_queue_close))
+        .route("/events", get(events))
+        .route("/image/{id}", get(image))
         .route("/assets/datastar.js", get(datastar_js))
         .route("/assets/app.css", get(app_css))
         .with_state(state)
@@ -45,49 +59,55 @@ async fn index(State(state): State<WebState>) -> Html<String> {
     render_full_page(&ctx).await
 }
 
-async fn cmd_left(State(state): State<WebState>) -> Html<String> {
+async fn cmd_left(State(state): State<WebState>) -> impl IntoResponse {
     let ctx = state.ctx.clone();
-    apply_decision(&ctx, DecisionSide::Left).await
+    apply_decision(ctx, DecisionSide::Left).await;
+    StatusCode::NO_CONTENT
 }
 
-async fn cmd_right(State(state): State<WebState>) -> Html<String> {
+async fn cmd_right(State(state): State<WebState>) -> impl IntoResponse {
     let ctx = state.ctx.clone();
-    apply_decision(&ctx, DecisionSide::Right).await
+    apply_decision(ctx, DecisionSide::Right).await;
+    StatusCode::NO_CONTENT
 }
 
-async fn cmd_next(State(state): State<WebState>) -> Html<String> {
+async fn cmd_next(State(state): State<WebState>) -> impl IntoResponse {
     let mut guard = state.ctx.state.write().await;
     guard.inner_mut().next();
     drop(guard);
     let ctx = state.ctx.clone();
-    render_partial(&ctx).await
+    broadcast_patch(&ctx).await;
+    StatusCode::NO_CONTENT
 }
 
-async fn cmd_prev(State(state): State<WebState>) -> Html<String> {
+async fn cmd_prev(State(state): State<WebState>) -> impl IntoResponse {
     let mut guard = state.ctx.state.write().await;
     guard.inner_mut().prev();
     drop(guard);
     let ctx = state.ctx.clone();
-    render_partial(&ctx).await
+    broadcast_patch(&ctx).await;
+    StatusCode::NO_CONTENT
 }
 
-async fn cmd_jump_next(State(state): State<WebState>) -> Html<String> {
+async fn cmd_jump_next(State(state): State<WebState>) -> impl IntoResponse {
     let mut guard = state.ctx.state.write().await;
     guard.inner_mut().jump_next_undecided();
     drop(guard);
     let ctx = state.ctx.clone();
-    render_partial(&ctx).await
+    broadcast_patch(&ctx).await;
+    StatusCode::NO_CONTENT
 }
 
-async fn cmd_jump_prev(State(state): State<WebState>) -> Html<String> {
+async fn cmd_jump_prev(State(state): State<WebState>) -> impl IntoResponse {
     let mut guard = state.ctx.state.write().await;
     guard.inner_mut().jump_prev_undecided();
     drop(guard);
     let ctx = state.ctx.clone();
-    render_partial(&ctx).await
+    broadcast_patch(&ctx).await;
+    StatusCode::NO_CONTENT
 }
 
-async fn cmd_undo(State(state): State<WebState>) -> Html<String> {
+async fn cmd_undo(State(state): State<WebState>) -> impl IntoResponse {
     let undo_action = {
         let mut guard = state.ctx.state.write().await;
         guard.inner_mut().undo_last().and_then(|entry| entry.undo_action)
@@ -100,10 +120,11 @@ async fn cmd_undo(State(state): State<WebState>) -> Html<String> {
     }
 
     let ctx = state.ctx.clone();
-    render_partial(&ctx).await
+    broadcast_patch(&ctx).await;
+    StatusCode::NO_CONTENT
 }
 
-async fn cmd_apply(State(state): State<WebState>) -> Html<String> {
+async fn cmd_apply(State(state): State<WebState>) -> impl IntoResponse {
     let needs_confirm = {
         let guard = state.ctx.state.read().await;
         let has_delete = guard
@@ -119,30 +140,34 @@ async fn cmd_apply(State(state): State<WebState>) -> Html<String> {
         guard.inner_mut().pending_delete_confirm = true;
         drop(guard);
         let ctx = state.ctx.clone();
-        return render_partial(&ctx).await;
+        broadcast_patch(&ctx).await;
+        return StatusCode::NO_CONTENT;
     }
 
     apply_queue(&state.ctx).await;
     let ctx = state.ctx.clone();
-    render_partial(&ctx).await
+    broadcast_patch(&ctx).await;
+    StatusCode::NO_CONTENT
 }
 
-async fn cmd_apply_confirm(State(state): State<WebState>) -> Html<String> {
+async fn cmd_apply_confirm(State(state): State<WebState>) -> impl IntoResponse {
     {
         let mut guard = state.ctx.state.write().await;
         guard.inner_mut().pending_delete_confirm = false;
     }
     apply_queue(&state.ctx).await;
     let ctx = state.ctx.clone();
-    render_partial(&ctx).await
+    broadcast_patch(&ctx).await;
+    StatusCode::NO_CONTENT
 }
 
-async fn cmd_apply_cancel(State(state): State<WebState>) -> Html<String> {
+async fn cmd_apply_cancel(State(state): State<WebState>) -> impl IntoResponse {
     let mut guard = state.ctx.state.write().await;
     guard.inner_mut().pending_delete_confirm = false;
     drop(guard);
     let ctx = state.ctx.clone();
-    render_partial(&ctx).await
+    broadcast_patch(&ctx).await;
+    StatusCode::NO_CONTENT
 }
 
 async fn apply_queue(ctx: &AppContext) {
@@ -169,39 +194,57 @@ async fn apply_queue(ctx: &AppContext) {
     drop(guard);
 }
 
-#[derive(Deserialize)]
-struct OpenForm {
-    path: String,
-}
-
 async fn cmd_open(
     State(state): State<WebState>,
-    form: Option<Form<OpenForm>>,
-) -> Html<String> {
-    let path = form
-        .and_then(|form| {
-            let value = form.0.path.trim().to_string();
-            if value.is_empty() {
-                None
-            } else {
-                Some(PathBuf::from(value))
-            }
-        })
-        .or_else(|| state.ctx.config.initial_path.clone());
+    body: BodyBytes,
+) -> impl IntoResponse {
+    let path = if body.is_empty() {
+        None
+    } else {
+        serde_urlencoded::from_bytes::<OpenForm>(&body)
+            .ok()
+            .and_then(|form| {
+                let value = form.path.trim().to_string();
+                if value.is_empty() {
+                    None
+                } else {
+                    Some(PathBuf::from(value))
+                }
+            })
+    }
+    .or_else(|| state.ctx.config.initial_path.clone());
     if let Some(path) = path {
         run_scan(&state.ctx, path).await;
+        let mut guard = state.ctx.state.write().await;
+        guard.inner_mut().show_open_modal = false;
     } else {
         let mut guard = state.ctx.state.write().await;
-        guard.inner_mut().images.clear();
-        guard.inner_mut().order.clear();
-        guard.inner_mut().cursor = 0;
-        guard.inner_mut().root_dir = None;
+        guard.inner_mut().show_open_modal = true;
     }
     let ctx = state.ctx.clone();
-    render_partial(&ctx).await
+    broadcast_patch(&ctx).await;
+    StatusCode::NO_CONTENT
 }
 
-async fn apply_decision(ctx: &AppContext, side: DecisionSide) -> Html<String> {
+async fn cmd_queue_toggle(State(state): State<WebState>) -> impl IntoResponse {
+    let mut guard = state.ctx.state.write().await;
+    guard.inner_mut().show_queue_modal = !guard.inner().show_queue_modal;
+    drop(guard);
+    let ctx = state.ctx.clone();
+    broadcast_patch(&ctx).await;
+    StatusCode::NO_CONTENT
+}
+
+async fn cmd_queue_close(State(state): State<WebState>) -> impl IntoResponse {
+    let mut guard = state.ctx.state.write().await;
+    guard.inner_mut().show_queue_modal = false;
+    drop(guard);
+    let ctx = state.ctx.clone();
+    broadcast_patch(&ctx).await;
+    StatusCode::NO_CONTENT
+}
+
+async fn apply_decision(ctx: AppContext, side: DecisionSide) {
     let (root_dir, destructive) = {
         let guard = ctx.state.read().await;
         (guard.inner().root_dir.clone(), ctx.config.destructive_delete)
@@ -254,7 +297,7 @@ async fn apply_decision(ctx: &AppContext, side: DecisionSide) -> Html<String> {
     }
 
     drop(guard);
-    render_partial(ctx).await
+    broadcast_patch(&ctx).await;
 }
 
 // undo helpers are handled in fs::apply_action_with_undo
@@ -336,10 +379,39 @@ async fn render_full_page(ctx: &AppContext) -> Html<String> {
     Html(template.render().unwrap_or_default())
 }
 
-async fn render_partial(ctx: &AppContext) -> Html<String> {
+async fn events(State(state): State<WebState>) -> impl IntoResponse {
+    let ctx = state.ctx.clone();
+    let mut rx = ctx.sse_tx.subscribe();
+    Sse::new(stream_fn(move |mut yielder: Yielder<Result<Event, Infallible>>| async move {
+        let initial = build_patch_event(&ctx).await;
+        yielder.yield_item(Ok(initial)).await;
+
+        loop {
+            match rx.recv().await {
+                Ok(event) => {
+                    yielder.yield_item(Ok(event)).await;
+                }
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    }))
+    .keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(20)).text("keep-alive"))
+}
+
+async fn broadcast_patch(ctx: &AppContext) {
+    let event = build_patch_event(ctx).await;
+    let _ = ctx.sse_tx.send(event);
+}
+
+async fn build_patch_event(ctx: &AppContext) -> Event {
     let view = build_view(ctx).await;
     let template = AppTemplate { view };
-    Html(template.render().unwrap_or_default())
+    let html = template.render().unwrap_or_default();
+    let patch = PatchElements::new(html)
+        .selector("#app")
+        .mode(ElementPatchMode::Outer);
+    patch.write_as_axum_sse_event()
 }
 
 async fn build_view(ctx: &AppContext) -> AppView {
@@ -365,6 +437,53 @@ async fn build_view(ctx: &AppContext) -> AppView {
         .filter(|image| image.queued_action.is_some())
         .count();
     let has_root = inner.root_dir.is_some();
+    let queue_items = inner
+        .images
+        .iter()
+        .filter_map(|image| {
+            let queued = image.queued_action.as_ref()?;
+            let side = match &image.decision {
+                crate::domain::DecisionState::Decided { side, .. } => Some(*side),
+                _ => None,
+            };
+            let arrow = match side {
+                Some(crate::domain::DecisionSide::Left) => "←".to_string(),
+                Some(crate::domain::DecisionSide::Right) => "→".to_string(),
+                None => "•".to_string(),
+            };
+            let action_label = match queued {
+                ActionConfig::Keep => "keep".to_string(),
+                ActionConfig::Delete => "delete".to_string(),
+                ActionConfig::Move { target } => format!("mv {}", target.display()),
+                ActionConfig::Rename { prefix } => {
+                    let ext = image
+                        .path
+                        .extension()
+                        .and_then(|ext| ext.to_str())
+                        .unwrap_or("");
+                    let seq = image.rename_sequence.unwrap_or(0);
+                    if ext.is_empty() {
+                        format!("rename {}{:06}", prefix, seq)
+                    } else {
+                        format!("rename {}{:06}.{}", prefix, seq, ext)
+                    }
+                }
+                ActionConfig::MetadataEdit { key, value } => format!("meta {}={}", key, value),
+            };
+            let file_label = inner
+                .root_dir
+                .as_ref()
+                .and_then(|root| image.path.strip_prefix(root).ok())
+                .unwrap_or(&image.path)
+                .to_string_lossy()
+                .to_string();
+            Some(QueueItem {
+                arrow,
+                action_label,
+                file_label,
+            })
+        })
+        .collect();
     AppView {
         has_images: current.is_some(),
         image_id: current.map(|entry| entry.id),
@@ -378,8 +497,10 @@ async fn build_view(ctx: &AppContext) -> AppView {
         total,
         queue_count,
         queue_mode: inner.queue_mode,
-        show_open_modal: !has_root,
+        show_open_modal: inner.show_open_modal || !has_root,
         show_delete_confirm: inner.pending_delete_confirm,
+        show_queue_modal: inner.show_queue_modal,
+        queue_items,
     }
 }
 
@@ -395,6 +516,15 @@ pub struct AppView {
     pub queue_mode: bool,
     pub show_open_modal: bool,
     pub show_delete_confirm: bool,
+    pub show_queue_modal: bool,
+    pub queue_items: Vec<QueueItem>,
+}
+
+#[derive(Clone, Debug)]
+pub struct QueueItem {
+    pub arrow: String,
+    pub action_label: String,
+    pub file_label: String,
 }
 
 fn orientation_transform(value: Option<u16>) -> Option<String> {

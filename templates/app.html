@@ -3,7 +3,9 @@
         <div class="title">piclr</div>
         <div class="status">
             <span>{{ view.index }} / {{ view.total }}</span>
-            <span>Queued: {{ view.queue_count }}</span>
+            <button class="queue-button" data-on:click="@post('/cmd/queue-toggle')">
+                Queued: {{ view.queue_count }}
+            </button>
         </div>
     </header>
 
@@ -52,6 +54,30 @@
             <div class="actions">
                 <button data-on:click="@post('/cmd/apply-cancel')">No</button>
                 <button data-on:click="@post('/cmd/apply-confirm')">Yes</button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if view.show_queue_modal %}
+    <div class="modal">
+        <div class="modal-card modal-wide">
+            <h2>Queued actions</h2>
+            {% if view.queue_items.is_empty() %}
+            <p>No queued actions.</p>
+            {% else %}
+            <ul class="queue-list">
+                {% for item in view.queue_items %}
+                <li>
+                    <span class="queue-arrow">{{ item.arrow }}</span>
+                    <span class="queue-action">{{ item.action_label }}</span>
+                    <span class="queue-file">{{ item.file_label }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+            <div class="actions">
+                <button data-on:click="@post('/cmd/queue-close')">Close</button>
             </div>
         </div>
     </div>

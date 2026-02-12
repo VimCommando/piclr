@@ -45,6 +45,15 @@ body {
     font-size: 14px;
 }
 
+.queue-button {
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 0;
+}
+
 .viewer {
     flex: 1;
     display: flex;
@@ -126,6 +135,46 @@ body {
     border-radius: 16px;
     width: min(90vw, 420px);
     text-align: center;
+}
+
+.modal-wide {
+    width: min(92vw, 720px);
+    text-align: left;
+}
+
+.queue-list {
+    list-style: none;
+    padding: 0;
+    margin: 16px 0;
+    display: grid;
+    gap: 12px;
+}
+
+.queue-list li {
+    display: grid;
+    grid-template-columns: 40px 180px 1fr;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.queue-arrow {
+    font-size: 18px;
+}
+
+.queue-action {
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.queue-file {
+    color: var(--muted);
+    font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .modal-card input {
