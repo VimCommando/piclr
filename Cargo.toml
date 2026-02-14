@@ -6,7 +6,7 @@ edition = "2024"
 [features]
 default = []
 metadata = ["dep:rexiv2"]
-tauri = ["dep:tauri", "dep:tauri-build"]
+tauri = ["dep:tauri", "dep:tauri-build", "dep:rfd"]
 
 [dependencies]
 asynk-strim = "0.1.5"
@@ -32,6 +32,10 @@ walkdir = "2"
 version = "2"
 optional = true
 features = []
+
+[dependencies.rfd]
+version = "0.14"
+optional = true
 
 [build-dependencies]
 ureq = "2"

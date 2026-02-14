@@ -1,24 +1,6 @@
 <div id="modal-region">
-    {% if view.show_open_modal || view.show_delete_confirm || view.show_files_modal || view.show_help_modal || view.show_queue_modal %}
+    {% if view.show_delete_confirm || view.show_files_modal || view.show_help_modal || view.show_queue_modal || view.show_apply_result %}
     <div class="modal-backdrop"></div>
-    {% endif %}
-
-    {% if view.show_open_modal %}
-    <div class="modal" style="z-index: {{ view.open_modal_z }}" data-on:click="if (evt.target === evt.currentTarget) { @post('/cmd/close') }">
-        <div class="modal-card">
-            <h2>Select a folder</h2>
-            <p>Use the CLI path or enter a directory here.</p>
-            <form data-on:submit="@post('/cmd/open', { contentType: 'form' })">
-                <input type="text" name="path" placeholder="/path/to/images" />
-                <div class="actions">
-                    <button type="submit">Open</button>
-                    <button type="button" data-on:click="@post('/cmd/close')">
-                        Close
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
     {% endif %}
 
     {% if view.show_delete_confirm %}
@@ -27,7 +9,7 @@
             <h2>Delete files?</h2>
             <p>This cannot be undone.</p>
             <div class="actions">
-                <button data-on:click="@post('/cmd/close')">No</button>
+                <button autofocus data-on:click="@post('/cmd/close')">No</button>
                 <button data-on:click="@post('/cmd/apply-confirm')">Yes</button>
             </div>
         </div>
@@ -56,7 +38,7 @@
             </ul>
             {% endif %}
             <div class="actions">
-                <button data-on:click="@post('/cmd/close')">Close</button>
+                <button autofocus data-on:click="@post('/cmd/close')">Close</button>
             </div>
         </div>
     </div>
@@ -126,7 +108,7 @@
                             ><span class="help-desc">Undo last command</span>
                         </li>
                         <li>
-                            <span class="help-key">↩</span
+                            <span class="help-key">Shift + A</span
                             ><span class="help-desc">Apply queued actions</span>
                         </li>
                     </ul>
@@ -158,7 +140,7 @@
                 </section>
             </div>
             <div class="actions">
-                <button data-on:click="@post('/cmd/close')">Close</button>
+                <button autofocus data-on:click="@post('/cmd/close')">Close</button>
             </div>
         </div>
     </div>
@@ -186,7 +168,32 @@
             </ul>
             {% endif %}
             <div class="actions">
-                <button data-on:click="@post('/cmd/close')">Close</button>
+                <button data-on:click="@post('/cmd/apply')"><span class="btn-glyph">↩</span>Apply</button>
+                <button autofocus data-on:click="@post('/cmd/close')">Close</button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if view.show_apply_result %}
+    <div class="modal" style="z-index: {{ view.apply_result_z }}" data-on:click="if (evt.target === evt.currentTarget) { @post('/cmd/close') }">
+        <div class="modal-card modal-wide">
+            <h2>Apply Complete</h2>
+            <p>{{ view.apply_completed }} of {{ view.apply_total }} actions completed successfully.</p>
+            {% if view.apply_failed > 0 %}
+            <p>Failed: {{ view.apply_failed }}</p>
+            <ul class="queue-log queue-log-errors">
+                {% for err in view.apply_errors %}
+                <li class="queue-entry queue-tone-left">
+                    <span class="queue-arrow">!</span>
+                    <span class="queue-action">Error</span>
+                    <code class="queue-file">{{ err }}</code>
+                </li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+            <div class="actions">
+                <button autofocus data-on:click="@post('/cmd/close')">Close</button>
             </div>
         </div>
     </div>

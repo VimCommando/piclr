@@ -2,7 +2,6 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use askama::Template;
-use axum::body::Bytes as BodyBytes;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{Html, IntoResponse, Response, Sse};
@@ -15,13 +14,9 @@ use bytes::Bytes;
 use mime_guess::MimeGuess;
 use tracing::warn;
 use serde::Deserialize;
+use datastar::axum::ReadSignals;
 use datastar::prelude::{ElementPatchMode, PatchElements, PatchSignals};
 use tokio::sync::{broadcast, RwLock};
-
-#[derive(Deserialize)]
-struct OpenForm {
-    path: String,
-}
 
 use crate::app::AppContext;
 use crate::domain::{ActionConfig, DecisionSide, ImageEntry, ModalView};
@@ -62,13 +57,6 @@ impl UiPatch {
         signals: false,
     };
 
-    const MODALS_AND_SIGNALS: Self = Self {
-        header: false,
-        viewer: false,
-        modals: true,
-        signals: true,
-    };
-
     const VIEWER_MODALS_AND_SIGNALS: Self = Self {
         header: false,
         viewer: true,
@@ -90,7 +78,7 @@ pub fn router(ctx: AppContext) -> Router {
         .route("/cmd/undo", post(cmd_undo))
         .route("/cmd/apply", post(cmd_apply))
         .route("/cmd/apply-confirm", post(cmd_apply_confirm))
-        .route("/cmd/open", post(cmd_open))
+        .route("/cmd/update-directory", patch(cmd_update_directory))
         .route("/cmd/show-queue", post(cmd_show_queue))
         .route("/cmd/show-files", post(cmd_show_files))
         .route("/cmd/help", post(cmd_help))
@@ -104,13 +92,6 @@ pub fn router(ctx: AppContext) -> Router {
 }
 
 async fn index(State(state): State<WebState>) -> Html<String> {
-    {
-        let mut guard = state.ctx.state.write().await;
-        let inner = guard.inner_mut();
-        if inner.root_dir.is_none() && !inner.has_view(ModalView::OpenDirectory) {
-            inner.show_view(ModalView::OpenDirectory);
-        }
-    }
     let ctx = state.ctx.clone();
     render_full_page(&ctx).await
 }
@@ -181,6 +162,11 @@ async fn cmd_undo(State(state): State<WebState>) -> impl IntoResponse {
 }
 
 async fn cmd_apply(State(state): State<WebState>) -> impl IntoResponse {
+    {
+        let mut guard = state.ctx.state.write().await;
+        guard.inner_mut().hide_view(ModalView::Queue);
+    }
+
     let needs_confirm = {
         let guard = state.ctx.state.read().await;
         let has_delete = guard
@@ -200,9 +186,21 @@ async fn cmd_apply(State(state): State<WebState>) -> impl IntoResponse {
         return StatusCode::NO_CONTENT;
     }
 
-    apply_queue(&state.ctx).await;
+    let summary = apply_queue(&state.ctx).await;
+    refresh_images_after_apply(&state.ctx).await;
+    {
+        let mut guard = state.ctx.state.write().await;
+        let inner = guard.inner_mut();
+        inner.last_apply_result = Some(crate::domain::state::ApplyResultSummary {
+            completed: summary.completed,
+            total: summary.total,
+            failed: summary.failed,
+            errors: summary.errors,
+        });
+        inner.show_view(ModalView::ApplyResult);
+    }
     let ctx = state.ctx.clone();
-    broadcast_patch(&ctx, UiPatch::MODALS_AND_SIGNALS).await;
+    broadcast_patch(&ctx, UiPatch::VIEWER_MODALS_AND_SIGNALS).await;
     StatusCode::NO_CONTENT
 }
 
@@ -210,68 +208,107 @@ async fn cmd_apply_confirm(State(state): State<WebState>) -> impl IntoResponse {
     {
         let mut guard = state.ctx.state.write().await;
         guard.inner_mut().hide_view(ModalView::DeleteConfirm);
+        guard.inner_mut().hide_view(ModalView::Queue);
     }
-    apply_queue(&state.ctx).await;
+    let summary = apply_queue(&state.ctx).await;
+    refresh_images_after_apply(&state.ctx).await;
+    {
+        let mut guard = state.ctx.state.write().await;
+        let inner = guard.inner_mut();
+        inner.last_apply_result = Some(crate::domain::state::ApplyResultSummary {
+            completed: summary.completed,
+            total: summary.total,
+            failed: summary.failed,
+            errors: summary.errors,
+        });
+        inner.show_view(ModalView::ApplyResult);
+    }
     let ctx = state.ctx.clone();
-    broadcast_patch(&ctx, UiPatch::MODALS_AND_SIGNALS).await;
+    broadcast_patch(&ctx, UiPatch::VIEWER_MODALS_AND_SIGNALS).await;
     StatusCode::NO_CONTENT
 }
 
-async fn apply_queue(ctx: &AppContext) {
+#[derive(Default)]
+struct ApplySummary {
+    total: usize,
+    completed: usize,
+    failed: usize,
+    errors: Vec<String>,
+}
+
+async fn apply_queue(ctx: &AppContext) -> ApplySummary {
     let (root_dir, destructive) = {
         let guard = ctx.state.read().await;
         (guard.inner().root_dir.clone(), ctx.config.destructive_delete)
     };
 
     let Some(root_dir) = root_dir else {
-        return;
+        return ApplySummary::default();
     };
 
     let config = FsConfig::new(root_dir, destructive);
     let mut guard = ctx.state.write().await;
     let images = guard.inner_mut().images.clone();
+    let mut summary = ApplySummary::default();
     for image in images {
         if let Some(action) = image.queued_action {
+            summary.total += 1;
             if let Err(err) = apply_action(&config, &image.path, &action, image.rename_sequence).await {
+                summary.failed += 1;
+                summary
+                    .errors
+                    .push(format!("{}: {}", image.path.display(), err));
                 warn!(%err, path = %image.path.display(), "Failed to apply queued action");
+            } else {
+                summary.completed += 1;
             }
         }
     }
     guard.inner_mut().images.iter_mut().for_each(|image| image.queued_action = None);
     drop(guard);
+    summary
 }
 
-async fn cmd_open(
-    State(state): State<WebState>,
-    body: BodyBytes,
-) -> impl IntoResponse {
-    let path = if body.is_empty() {
-        None
-    } else {
-        serde_urlencoded::from_bytes::<OpenForm>(&body)
-            .ok()
-            .and_then(|form| {
-                let value = form.path.trim().to_string();
-                if value.is_empty() {
-                    None
-                } else {
-                    Some(PathBuf::from(value))
-                }
-            })
+async fn refresh_images_after_apply(ctx: &AppContext) {
+    let root_dir = {
+        let guard = ctx.state.read().await;
+        guard.inner().root_dir.clone()
+    };
+    if let Some(path) = root_dir {
+        run_scan(ctx, path).await;
     }
-    .or_else(|| state.ctx.config.initial_path.clone());
-    if let Some(path) = path {
-        run_scan(&state.ctx, path).await;
+}
+
+#[derive(Deserialize)]
+struct UpdateDirectorySignals {
+    #[serde(alias = "directoryPath")]
+    directory_path: Option<String>,
+}
+
+async fn cmd_update_directory(
+    State(state): State<WebState>,
+    ReadSignals(signals): ReadSignals<UpdateDirectorySignals>,
+) -> impl IntoResponse {
+    let path = signals
+        .directory_path
+        .and_then(|path| {
+            let trimmed = path.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(PathBuf::from(trimmed))
+            }
+        })
+        .or_else(|| state.ctx.config.initial_path.clone());
+
+    let Some(path) = path else {
+        return StatusCode::NO_CONTENT;
+    };
+
+    run_scan(&state.ctx, path).await;
+    {
         let mut guard = state.ctx.state.write().await;
-        guard.inner_mut().hide_view(ModalView::OpenDirectory);
-    } else {
-        let mut guard = state.ctx.state.write().await;
-        let inner = guard.inner_mut();
-        if inner.view_stack.last().copied() == Some(ModalView::OpenDirectory) {
-            inner.close_view();
-        } else {
-            inner.show_view(ModalView::OpenDirectory);
-        }
+        guard.inner_mut().view_stack.clear();
     }
     let ctx = state.ctx.clone();
     broadcast_patch(&ctx, UiPatch::VIEWER_MODALS_AND_SIGNALS).await;
@@ -405,15 +442,10 @@ async fn apply_decision(ctx: AppContext, side: DecisionSide) {
 // undo helpers are handled in fs::apply_action_with_undo
 
 async fn run_scan(ctx: &AppContext, path: PathBuf) {
-    let mut state = ctx.state.write().await;
-    state.transition_to_scanning();
-    drop(state);
-
     let images = scan_images(&path).await;
 
     let mut state = ctx.state.write().await;
-    state.transition_to_ready(images, Some(path));
-    state.transition_to_viewing();
+    state.inner_mut().set_images(images, Some(path));
 }
 
 async fn image(State(state): State<WebState>, Path(id): Path<u64>) -> Response {
@@ -471,6 +503,18 @@ fn bytes_response(path: &PathBuf, bytes: Bytes) -> Response {
     headers.insert(
         axum::http::header::CONTENT_TYPE,
         HeaderValue::from_str(mime.as_ref()).unwrap_or(HeaderValue::from_static("application/octet-stream")),
+    );
+    headers.insert(
+        axum::http::header::CACHE_CONTROL,
+        HeaderValue::from_static("no-store, no-cache, max-age=0, must-revalidate"),
+    );
+    headers.insert(
+        axum::http::header::PRAGMA,
+        HeaderValue::from_static("no-cache"),
+    );
+    headers.insert(
+        axum::http::header::EXPIRES,
+        HeaderValue::from_static("0"),
     );
     (headers, bytes).into_response()
 }
@@ -558,7 +602,8 @@ fn counter_signals_json(view: &AppView) -> String {
         "counterRightAction": view.right_action_count,
         "counterImageIndex": if view.total > 0 { view.index } else { 0 },
         "counterImageTotal": view.total,
-        "counterQueueCount": view.queue_count
+        "counterQueueCount": view.queue_count,
+        "currentPath": view.current_path_label
     })
     .to_string()
 }
@@ -601,13 +646,19 @@ async fn build_view(ctx: &AppContext) -> AppView {
     let show_queue_modal = inner.has_view(ModalView::Queue);
     let show_files_modal = inner.has_view(ModalView::Files);
     let show_help_modal = inner.has_view(ModalView::Help);
-    let show_open_modal = inner.has_view(ModalView::OpenDirectory);
+    let show_apply_result = inner.has_view(ModalView::ApplyResult);
     let show_delete_confirm = inner.has_view(ModalView::DeleteConfirm);
     let queue_modal_z = modal_layer(&inner.view_stack, ModalView::Queue);
     let files_modal_z = modal_layer(&inner.view_stack, ModalView::Files);
     let help_modal_z = modal_layer(&inner.view_stack, ModalView::Help);
-    let open_modal_z = modal_layer(&inner.view_stack, ModalView::OpenDirectory);
+    let apply_result_z = modal_layer(&inner.view_stack, ModalView::ApplyResult);
     let delete_modal_z = modal_layer(&inner.view_stack, ModalView::DeleteConfirm);
+    let last_apply_result = inner.last_apply_result.clone();
+    let current_path_label = inner
+        .root_dir
+        .as_ref()
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| "No directory selected".to_string());
     let mut queue_items: Vec<QueueItem> = Vec::new();
     let mut queue_has_current = false;
     if show_queue_modal {
@@ -678,10 +729,12 @@ async fn build_view(ctx: &AppContext) -> AppView {
     };
     AppView {
         has_images: current.is_some(),
+        directory_select_enabled: cfg!(feature = "tauri"),
         stack_cards,
         nav_direction,
         nav_tick: inner.nav_tick,
         current_image_id: current.map(|entry| entry.id).unwrap_or(0),
+        current_path_label,
         left_action_label: action_config_label(&inner.action_mapping.left),
         right_action_label: action_config_label(&inner.action_mapping.right),
         left_action_count,
@@ -691,16 +744,20 @@ async fn build_view(ctx: &AppContext) -> AppView {
         queue_count,
         file_count,
         queue_mode: inner.queue_mode,
-        show_open_modal,
         show_delete_confirm,
         show_queue_modal,
         show_files_modal,
         show_help_modal,
-        open_modal_z,
+        show_apply_result,
         delete_modal_z,
         queue_modal_z,
         files_modal_z,
         help_modal_z,
+        apply_result_z,
+        apply_completed: last_apply_result.as_ref().map(|r| r.completed).unwrap_or(0),
+        apply_total: last_apply_result.as_ref().map(|r| r.total).unwrap_or(0),
+        apply_failed: last_apply_result.as_ref().map(|r| r.failed).unwrap_or(0),
+        apply_errors: last_apply_result.map(|r| r.errors).unwrap_or_default(),
         queue_items,
         file_items,
         queue_insert_before_id,
@@ -711,10 +768,12 @@ async fn build_view(ctx: &AppContext) -> AppView {
 #[derive(Clone, Debug)]
 pub struct AppView {
     pub has_images: bool,
+    pub directory_select_enabled: bool,
     pub stack_cards: Vec<StackCard>,
     pub nav_direction: String,
     pub nav_tick: u64,
     pub current_image_id: u64,
+    pub current_path_label: String,
     pub left_action_label: String,
     pub right_action_label: String,
     pub left_action_count: usize,
@@ -724,16 +783,20 @@ pub struct AppView {
     pub queue_count: usize,
     pub file_count: usize,
     pub queue_mode: bool,
-    pub show_open_modal: bool,
     pub show_delete_confirm: bool,
     pub show_queue_modal: bool,
     pub show_files_modal: bool,
     pub show_help_modal: bool,
-    pub open_modal_z: usize,
+    pub show_apply_result: bool,
     pub delete_modal_z: usize,
     pub queue_modal_z: usize,
     pub files_modal_z: usize,
     pub help_modal_z: usize,
+    pub apply_result_z: usize,
+    pub apply_completed: usize,
+    pub apply_total: usize,
+    pub apply_failed: usize,
+    pub apply_errors: Vec<String>,
     pub queue_items: Vec<QueueItem>,
     pub file_items: Vec<QueueItem>,
     pub queue_insert_before_id: Option<u64>,
@@ -753,6 +816,7 @@ pub struct QueueItem {
 #[derive(Clone, Debug)]
 pub struct StackCard {
     pub image_id: u64,
+    pub image_src: String,
     pub alignment: String,
     pub action_item: QueueItem,
     pub top_percent: f32,
@@ -786,7 +850,7 @@ fn action_config_label(action: &ActionConfig) -> String {
     match action {
         ActionConfig::Keep => "Keep".to_string(),
         ActionConfig::Delete => "Delete".to_string(),
-        ActionConfig::Move { .. } => "Move".to_string(),
+        ActionConfig::Move { target } => target.display().to_string(),
         ActionConfig::Rename { .. } => "Rename".to_string(),
         ActionConfig::MetadataEdit { .. } => "Metadata".to_string(),
     }
@@ -807,14 +871,25 @@ fn build_stack_cards(
             let image = inner.images.get(idx)?;
             let offset = pos as isize - inner.cursor as isize;
             let top_percent = 16.0 + (offset as f32 * 70.0);
+            let action_item = queue_item_for_image(image, inner.root_dir.as_ref());
+            let cache_key = query_encode_component(&action_item.file_label);
             Some(StackCard {
                 image_id: image.id,
+                image_src: format!("/image/{}?k={}", image.id, cache_key),
                 alignment: image_alignment_for(image),
-                action_item: queue_item_for_image(image, inner.root_dir.as_ref()),
+                action_item,
                 top_percent,
             })
         })
         .collect()
+}
+
+fn query_encode_component(value: &str) -> String {
+    let encoded = serde_urlencoded::to_string([("k", value)]).unwrap_or_default();
+    encoded
+        .strip_prefix("k=")
+        .unwrap_or(encoded.as_str())
+        .to_string()
 }
 
 fn queue_item_from_action(
@@ -836,7 +911,7 @@ fn queue_item_from_action(
     let action_label = match action {
         ActionConfig::Keep => "Keep".to_string(),
         ActionConfig::Delete => "Delete".to_string(),
-        ActionConfig::Move { target } => format!("Move {}", target.display()),
+        ActionConfig::Move { target } => target.display().to_string(),
         ActionConfig::Rename { prefix } => {
             let ext = image
                 .path

@@ -58,7 +58,7 @@ body {
 .action-header-half {
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: space-between;
     gap: var(--space-2);
     padding: var(--space-2) var(--space-4);
 }
@@ -77,6 +77,71 @@ body {
 .action-header-value {
     font-weight: 600;
     color: var(--text);
+}
+
+.folder-menu-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    padding-right: var(--space-3);
+    margin-right: var(--space-2);
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.folder-button {
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: var(--panel-strong);
+    color: var(--status-text);
+    border-radius: 10px;
+    padding: 4px 8px;
+    cursor: pointer;
+}
+
+.folder-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    min-width: 260px;
+    max-width: min(70vw, 560px);
+    background: var(--panel-strong);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 10px;
+    padding: 8px 10px;
+    display: none;
+    z-index: 1200;
+}
+
+.folder-menu-item {
+    font-size: 12px;
+    color: var(--status-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.folder-menu-wrap:hover .folder-menu,
+.folder-menu-wrap:focus-within .folder-menu {
+    display: block;
+}
+
+.action-header-content {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.action-header-right {
+    justify-content: space-between;
+}
+
+.settings-button {
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: var(--panel-strong);
+    color: var(--status-text);
+    border-radius: 10px;
+    padding: 4px 8px;
+    cursor: pointer;
+    margin-left: var(--space-2);
 }
 
 .action-header-count {
@@ -265,6 +330,12 @@ image-card > .card-media > .card-img {
     transform: translateY(-2px);
 }
 
+button:disabled,
+button[aria-disabled="true"] {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
 .empty {
     flex: 1;
     display: flex;
@@ -383,6 +454,19 @@ image-card > .card-media > .card-img {
     box-shadow: inset 0 -2px 0 0 var(--muted);
 }
 
+.queue-log.queue-log-errors .queue-entry {
+    grid-template-columns: 32px 64px 1fr;
+    align-items: start;
+}
+
+.queue-log.queue-log-errors .queue-file {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
 image-card > .card-caption {
     margin: 0;
     border-radius: 0;
@@ -484,6 +568,16 @@ image-card > .card-caption {
 
 .modal-card .actions {
     flex-shrink: 0;
+}
+
+.modal-card .actions button {
+    background: var(--panel-strong);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.modal-card .actions button:hover {
+    color: var(--text);
+    border-color: transparent;
 }
 
 .modal-card input {

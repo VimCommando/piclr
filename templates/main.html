@@ -8,6 +8,7 @@
         <script type="module" src="/assets/datastar.js"></script>
         <script>
             (() => {
+                const directorySelectionEnabled = {{ view.directory_select_enabled }};
                 const scrollCurrentLogEntries = () => {
                     document.querySelectorAll(".queue-log").forEach((list) => {
                         const current = list.querySelector(".log-entry-current");
@@ -21,10 +22,77 @@
                     });
                 };
 
+                const focusTopModalCloseButton = () => {
+                    const modals = Array.from(document.querySelectorAll(".modal"));
+                    if (modals.length === 0) return;
+                    modals.sort((a, b) => {
+                        const az = Number.parseInt(a.style.zIndex || "0", 10);
+                        const bz = Number.parseInt(b.style.zIndex || "0", 10);
+                        return az - bz;
+                    });
+                    const topModal = modals[modals.length - 1];
+                    const closeButton = topModal.querySelector(
+                        "button[data-on\\:click*=\"/cmd/close\"]",
+                    );
+                    if (!(closeButton instanceof HTMLButtonElement)) return;
+                    if (document.activeElement === closeButton) return;
+                    closeButton.focus({ preventScroll: true });
+                };
+
+                const updateDirectorySignal = (directoryPath) => {
+                    if (!directoryPath) return;
+                    const signalInput = document.getElementById("directory-path-signal");
+                    if (!(signalInput instanceof HTMLInputElement)) return;
+                    signalInput.value = directoryPath;
+                    signalInput.dispatchEvent(new Event("input", { bubbles: true }));
+                    signalInput.dispatchEvent(new Event("change", { bubbles: true }));
+                };
+                window.piclrSetDirectoryPath = updateDirectorySignal;
+
+                window.piclrOpenDirectoryPicker = async () => {
+                    if (!directorySelectionEnabled) {
+                        return;
+                    }
+                    if (window.__TAURI__?.core?.invoke) {
+                        try {
+                            const selectedDirectoryPath = await window.__TAURI__.core.invoke("pick_directory");
+                            if (selectedDirectoryPath) {
+                                void updateDirectorySignal(selectedDirectoryPath);
+                            }
+                            return;
+                        } catch (_) {
+                            return;
+                        }
+                    }
+                    if (typeof window.showDirectoryPicker === "function") {
+                        try {
+                            const handle = await window.showDirectoryPicker({ mode: "read" });
+                            const selectedDirectoryPath = handle?.path || handle?.fullPath || handle?.name || "";
+                            if (selectedDirectoryPath) {
+                                void updateDirectorySignal(selectedDirectoryPath);
+                                return;
+                            }
+                        } catch (_) {
+                            return;
+                        }
+                    }
+                    const input = document.getElementById("directory-picker");
+                    if (!(input instanceof HTMLInputElement)) return;
+                    input.click();
+                };
+
                 const boot = () => {
                     scrollCurrentLogEntries();
+                    focusTopModalCloseButton();
                     const observer = new MutationObserver(scrollCurrentLogEntries);
+                    const focusObserver = new MutationObserver(focusTopModalCloseButton);
                     observer.observe(document.body, { childList: true, subtree: true });
+                    focusObserver.observe(document.body, {
+                        childList: true,
+                        subtree: true,
+                        attributes: true,
+                        attributeFilter: ["style"],
+                    });
                 };
 
                 if (document.readyState === "loading") {
@@ -37,25 +105,26 @@
     </head>
     <body
         data-init="@patch('/events', { openWhenHidden: true })"
-        data-on:keydown__prevent="
-            if (evt.key === 'ArrowLeft') { @post('/cmd/left') }
-            if (evt.key === 'ArrowRight') { @post('/cmd/right') }
-            if (evt.key === 'h' || evt.key === 'H') { @post('/cmd/left') }
-            if (evt.key === 'l' || evt.key === 'L') { @post('/cmd/right') }
-            if (evt.key === 'j' || evt.key === 'J') { @post('/cmd/next') }
-            if (evt.key === 'k' || evt.key === 'K') { @post('/cmd/prev') }
-            if (evt.key === 'ArrowUp' && evt.shiftKey) { @post('/cmd/jump-prev') }
-            if (evt.key === 'ArrowDown' && evt.shiftKey) { @post('/cmd/jump-next') }
-            if (evt.key === 'J' && evt.shiftKey) { @post('/cmd/jump-next') }
-            if (evt.key === 'K' && evt.shiftKey) { @post('/cmd/jump-prev') }
-            if (evt.key === 'ArrowUp' && !evt.shiftKey) { @post('/cmd/prev') }
-            if (evt.key === 'ArrowDown' && !evt.shiftKey) { @post('/cmd/next') }
-            if ((evt.key === 'o' || evt.key === 'O') && evt.ctrlKey) { @post('/cmd/open') }
-            if (evt.key === 'u' || evt.key === 'U') { @post('/cmd/undo') }
-            if (evt.key === 'q' || evt.key === 'Q') { @post('/cmd/show-queue') }
-            if (evt.key === 'i' || evt.key === 'I') { @post('/cmd/show-files') }
-            if (evt.key === '?') { @post('/cmd/help') }
-            if (evt.key === 'Escape') { @post('/cmd/close') }
+        data-on:keydown="
+            if (evt.key === 'ArrowLeft') { evt.preventDefault(); @post('/cmd/left') }
+            if (evt.key === 'ArrowRight') { evt.preventDefault(); @post('/cmd/right') }
+            if (evt.key === 'h' || evt.key === 'H') { evt.preventDefault(); @post('/cmd/left') }
+            if (evt.key === 'l' || evt.key === 'L') { evt.preventDefault(); @post('/cmd/right') }
+            if (evt.key === 'j' || evt.key === 'J') { evt.preventDefault(); @post('/cmd/next') }
+            if (evt.key === 'k' || evt.key === 'K') { evt.preventDefault(); @post('/cmd/prev') }
+            if (evt.key === 'ArrowUp' && evt.shiftKey) { evt.preventDefault(); @post('/cmd/jump-prev') }
+            if (evt.key === 'ArrowDown' && evt.shiftKey) { evt.preventDefault(); @post('/cmd/jump-next') }
+            if (evt.key === 'J' && evt.shiftKey) { evt.preventDefault(); @post('/cmd/jump-next') }
+            if (evt.key === 'K' && evt.shiftKey) { evt.preventDefault(); @post('/cmd/jump-prev') }
+            if (evt.key === 'ArrowUp' && !evt.shiftKey) { evt.preventDefault(); @post('/cmd/prev') }
+            if (evt.key === 'ArrowDown' && !evt.shiftKey) { evt.preventDefault(); @post('/cmd/next') }
+            if ((evt.key === 'o' || evt.key === 'O') && evt.ctrlKey) { evt.preventDefault(); window.piclrOpenDirectoryPicker?.() }
+            if (evt.key === 'A' && evt.shiftKey) { evt.preventDefault(); @post('/cmd/apply') }
+            if (evt.key === 'u' || evt.key === 'U') { evt.preventDefault(); @post('/cmd/undo') }
+            if (evt.key === 'q' || evt.key === 'Q') { evt.preventDefault(); @post('/cmd/show-queue') }
+            if (evt.key === 'i' || evt.key === 'I') { evt.preventDefault(); @post('/cmd/show-files') }
+            if (evt.key === '?') { evt.preventDefault(); @post('/cmd/help') }
+            if (evt.key === 'Escape') { evt.preventDefault(); @post('/cmd/close') }
         "
     >
         {% include "app.html" %}

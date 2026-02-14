@@ -25,8 +25,12 @@ impl Default for AppConfig {
             queue_mode: true,
             destructive_delete: false,
             action_mapping: ActionMapping {
-                left: ActionConfig::Delete,
-                right: ActionConfig::Keep,
+                left: ActionConfig::Move {
+                    target: PathBuf::from("trash"),
+                },
+                right: ActionConfig::Move {
+                    target: PathBuf::from("keep"),
+                },
             },
             sort_mode: SortMode {
                 key: SortKey::Filesystem,

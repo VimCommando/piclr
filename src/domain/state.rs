@@ -48,17 +48,26 @@ pub struct AppStateInner {
     pub rename_counter: u64,
     pub root_dir: Option<PathBuf>,
     pub view_stack: Vec<ModalView>,
+    pub last_apply_result: Option<ApplyResultSummary>,
     pub nav_direction: Option<NavDirection>,
     pub nav_tick: u64,
 }
 
+#[derive(Clone, Debug)]
+pub struct ApplyResultSummary {
+    pub completed: usize,
+    pub total: usize,
+    pub failed: usize,
+    pub errors: Vec<String>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModalView {
-    OpenDirectory,
     DeleteConfirm,
     Queue,
     Files,
     Help,
+    ApplyResult,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -81,6 +90,7 @@ impl AppStateInner {
             rename_counter: 1,
             root_dir: None,
             view_stack: Vec::new(),
+            last_apply_result: None,
             nav_direction: None,
             nav_tick: 0,
         }

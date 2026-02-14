@@ -1,12 +1,35 @@
 <header id="action-header" class="action-header">
     <div class="action-header-half action-header-left">
-        <span class="action-header-title">Left</span>
-        <span class="action-header-value">{{ view.left_action_label }}</span>
-        <span class="action-header-count" data-text="$counterLeftAction"></span>
+        <div class="folder-menu-wrap">
+            <button
+                class="folder-button"
+                type="button"
+                title="Select directory"
+                {% if view.directory_select_enabled %}
+                data-on:click="window.piclrOpenDirectoryPicker?.()"
+                {% else %}
+                disabled
+                aria-disabled="true"
+                {% endif %}
+            >
+                📁
+            </button>
+            <div class="folder-menu">
+                <div class="folder-menu-item" data-text="$currentPath"></div>
+            </div>
+        </div>
+        <div class="action-header-content">
+            <span class="action-header-title">Left</span>
+            <span class="action-header-value">{{ view.left_action_label }}</span>
+            <span class="action-header-count" data-text="$counterLeftAction"></span>
+        </div>
     </div>
     <div class="action-header-half action-header-right">
-        <span class="action-header-title">Right</span>
-        <span class="action-header-value">{{ view.right_action_label }}</span>
-        <span class="action-header-count" data-text="$counterRightAction"></span>
+        <div class="action-header-content">
+            <span class="action-header-title">Right</span>
+            <span class="action-header-value">{{ view.right_action_label }}</span>
+            <span class="action-header-count" data-text="$counterRightAction"></span>
+        </div>
+        <button class="settings-button" type="button" title="Settings">⚙</button>
     </div>
 </header>
