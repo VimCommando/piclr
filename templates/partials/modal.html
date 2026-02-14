@@ -1,23 +1,30 @@
 <div id="modal-region">
-    {% if view.show_delete_confirm || view.show_files_modal || view.show_help_modal || view.show_queue_modal || view.show_apply_result %}
+    {% if view.show_delete_confirm || view.show_files_modal ||
+    view.show_help_modal || view.show_queue_modal || view.show_apply_result %}
     <div class="modal-backdrop"></div>
-    {% endif %}
-
-    {% if view.show_delete_confirm %}
-    <div class="modal" style="z-index: {{ view.delete_modal_z }}" data-on:click="if (evt.target === evt.currentTarget) { @post('/cmd/close') }">
+    {% endif %} {% if view.show_delete_confirm %}
+    <div
+        class="modal"
+        style="z-index: {{ view.delete_modal_z }}"
+        data-on:click="if (evt.target === evt.currentTarget) { @post('/cmd/close') }"
+    >
         <div class="modal-card">
             <h2>Delete files?</h2>
             <p>This cannot be undone.</p>
-            <div class="actions">
-                <button autofocus data-on:click="@post('/cmd/close')">No</button>
+            <command-list>
+                <button autofocus data-on:click="@post('/cmd/close')">
+                    No
+                </button>
                 <button data-on:click="@post('/cmd/apply-confirm')">Yes</button>
-            </div>
+            </command-list>
         </div>
     </div>
-    {% endif %}
-
-    {% if view.show_files_modal %}
-    <div class="modal" style="z-index: {{ view.files_modal_z }}" data-on:click="if (evt.target === evt.currentTarget) { @post('/cmd/close') }">
+    {% endif %} {% if view.show_files_modal %}
+    <div
+        class="modal"
+        style="z-index: {{ view.files_modal_z }}"
+        data-on:click="if (evt.target === evt.currentTarget) { @post('/cmd/close') }"
+    >
         <div class="modal-card modal-wide">
             <h2>Images</h2>
             {% if view.file_count == 0 %}
@@ -37,15 +44,22 @@
                 {% endfor %}
             </ul>
             {% endif %}
-            <div class="actions">
-                <button autofocus data-on:click="@post('/cmd/close')">Close</button>
-            </div>
+            <command-list>
+                <button data-on:click="@post('/cmd/queue/reset')">
+                    🔄 Reset
+                </button>
+                <button autofocus data-on:click="@post('/cmd/close')">
+                    ✖️ Close
+                </button>
+            </command-list>
         </div>
     </div>
-    {% endif %}
-
-    {% if view.show_help_modal %}
-    <div class="modal" style="z-index: {{ view.help_modal_z }}" data-on:click="if (evt.target === evt.currentTarget) { @post('/cmd/close') }">
+    {% endif %} {% if view.show_help_modal %}
+    <div
+        class="modal"
+        style="z-index: {{ view.help_modal_z }}"
+        data-on:click="if (evt.target === evt.currentTarget) { @post('/cmd/close') }"
+    >
         <div class="modal-card modal-wide">
             <h2>Key Bindings</h2>
             <div class="help-scroll">
@@ -139,21 +153,27 @@
                     </ul>
                 </section>
             </div>
-            <div class="actions">
-                <button autofocus data-on:click="@post('/cmd/close')">Close</button>
-            </div>
+            <command-list>
+                <button autofocus data-on:click="@post('/cmd/close')">
+                    ✖️ Close
+                </button>
+            </command-list>
         </div>
     </div>
-    {% endif %}
-
-    {% if view.show_queue_modal %}
-    <div class="modal" style="z-index: {{ view.queue_modal_z }}" data-on:click="if (evt.target === evt.currentTarget) { @post('/cmd/close') }">
+    {% endif %} {% if view.show_queue_modal %}
+    <div
+        class="modal"
+        style="z-index: {{ view.queue_modal_z }}"
+        data-on:click="if (evt.target === evt.currentTarget) { @post('/cmd/close') }"
+    >
         <div class="modal-card modal-wide">
             <h2>Queued actions</h2>
             {% if view.queue_items.is_empty() %}
             <p>No queued actions.</p>
             {% else %}
-            <ul class="queue-log{% if view.queue_insert_at_end %} queue-log-insert-end{% endif %}">
+            <ul
+                class="queue-log{% if view.queue_insert_at_end %} queue-log-insert-end{% endif %}"
+            >
                 {% for item in view.queue_items %}
                 <li
                     class="queue-entry queue-tone-{{ item.action_tone }}{% if item.image_id == view.current_image_id %} log-entry-current{% endif %}{% if item.is_insert_before %} queue-entry-insert-before{% endif %}"
@@ -167,19 +187,29 @@
                 {% endfor %}
             </ul>
             {% endif %}
-            <div class="actions">
-                <button data-on:click="@post('/cmd/apply')"><span class="btn-glyph">↩</span>Apply</button>
-                <button autofocus data-on:click="@post('/cmd/close')">Close</button>
-            </div>
+            <command-list>
+                <button data-on:click="@post('/cmd/queue/reset')">
+                    🔄 Reset
+                </button>
+                <button data-on:click="@post('/cmd/apply')">▶️ Apply</button>
+                <button autofocus data-on:click="@post('/cmd/close')">
+                    ✖️ Close
+                </button>
+            </command-list>
         </div>
     </div>
-    {% endif %}
-
-    {% if view.show_apply_result %}
-    <div class="modal" style="z-index: {{ view.apply_result_z }}" data-on:click="if (evt.target === evt.currentTarget) { @post('/cmd/close') }">
+    {% endif %} {% if view.show_apply_result %}
+    <div
+        class="modal"
+        style="z-index: {{ view.apply_result_z }}"
+        data-on:click="if (evt.target === evt.currentTarget) { @post('/cmd/close') }"
+    >
         <div class="modal-card modal-wide">
             <h2>Apply Complete</h2>
-            <p>{{ view.apply_completed }} of {{ view.apply_total }} actions completed successfully.</p>
+            <p>
+                {{ view.apply_completed }} of {{ view.apply_total }} actions
+                completed successfully.
+            </p>
             {% if view.apply_failed > 0 %}
             <p>Failed: {{ view.apply_failed }}</p>
             <ul class="queue-log queue-log-errors">
@@ -193,7 +223,9 @@
             </ul>
             {% endif %}
             <div class="actions">
-                <button autofocus data-on:click="@post('/cmd/close')">Close</button>
+                <button autofocus data-on:click="@post('/cmd/close')">
+                    Close
+                </button>
             </div>
         </div>
     </div>

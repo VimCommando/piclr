@@ -1,4 +1,4 @@
-<header id="action-header">
+<header id="header">
     <section aria-label="Directory">
         <button
             id="directory-select"
@@ -7,9 +7,9 @@
             data-on:click="window.piclrOpenDirectoryPicker?.()"
             data-attr="{ disabled: !$directorySelectEnabled, 'aria-disabled': !$directorySelectEnabled }"
         >
-            📁
+            <glyph>📁</glyph>
         </button>
-        <button data-on:click="@post('/cmd/show-files')">
+        <button data-on:click="@post('/cmd/files/show')">
             <span data-text="$counterImageIndex"></span> /
             <span data-text="$counterImageTotal"></span>
         </button>
@@ -26,9 +26,11 @@
         <header-counter data-text="$counterRightAction"></header-counter>
     </section>
     <section aria-label="Queue">
-        <button data-on:click="@post('/cmd/show-queue')">
+        <button data-on:click="@post('/cmd/queue/show')">
             <span data-text="$counterQueueCount"></span>
-            <button id="apply-button" type="button" title="Apply">▶️</button>
+        </button>
+        <button data-on:click="@post('/cmd/queue/show')">
+            <glyph>⏸️</glyph>
         </button>
     </section>
 </header>

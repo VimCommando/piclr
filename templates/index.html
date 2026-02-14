@@ -121,15 +121,15 @@
             if ((evt.key === 'o' || evt.key === 'O') && evt.ctrlKey) { evt.preventDefault(); window.piclrOpenDirectoryPicker?.() }
             if (evt.key === 'A' && evt.shiftKey) { evt.preventDefault(); @post('/cmd/apply') }
             if (evt.key === 'u' || evt.key === 'U') { evt.preventDefault(); @post('/cmd/undo') }
-            if (evt.key === 'q' || evt.key === 'Q') { evt.preventDefault(); @post('/cmd/show-queue') }
-            if (evt.key === 'i' || evt.key === 'I') { evt.preventDefault(); @post('/cmd/show-files') }
+            if (evt.key === 'q' || evt.key === 'Q') { evt.preventDefault(); @post('/cmd/queue/show') }
+            if (evt.key === 'i' || evt.key === 'I') { evt.preventDefault(); @post('/cmd/files/show') }
             if (evt.key === '?') { evt.preventDefault(); @post('/cmd/help') }
             if (evt.key === 'Escape') { evt.preventDefault(); @post('/cmd/close') }
         "
     >
-        <div id="app" class="app">
+        <app id="app">
             {% include "partials/modal.html" %}
-            {% include "partials/header.html" %} 
+            {% include "partials/header.html" %}
             {% include "partials/viewer.html" %}
             {% include "partials/footer.html" %}
             <input
@@ -167,6 +167,6 @@
                 data-bind:directory-path
                 data-on:change="@patch('/cmd/update-directory')"
             />
-        </div>
+        </app>
     </body>
 </html>

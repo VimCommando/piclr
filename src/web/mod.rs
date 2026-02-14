@@ -34,6 +34,8 @@ pub struct WebState {
 struct UiPatch {
     header: bool,
     viewer: bool,
+    stack: bool,
+    stack_reset: bool,
     modals: bool,
     signals: bool,
 }
@@ -42,13 +44,17 @@ impl UiPatch {
     const ALL: Self = Self {
         header: true,
         viewer: true,
+        stack: true,
+        stack_reset: true,
         modals: true,
         signals: true,
     };
 
     const VIEWER_AND_SIGNALS: Self = Self {
         header: false,
-        viewer: true,
+        viewer: false,
+        stack: true,
+        stack_reset: false,
         modals: false,
         signals: true,
     };
@@ -56,13 +62,26 @@ impl UiPatch {
     const MODALS_ONLY: Self = Self {
         header: false,
         viewer: false,
+        stack: false,
+        stack_reset: false,
         modals: true,
         signals: false,
     };
 
     const VIEWER_MODALS_AND_SIGNALS: Self = Self {
         header: false,
-        viewer: true,
+        viewer: false,
+        stack: true,
+        stack_reset: false,
+        modals: true,
+        signals: true,
+    };
+
+    const RESET_QUEUE: Self = Self {
+        header: false,
+        viewer: false,
+        stack: true,
+        stack_reset: true,
         modals: true,
         signals: true,
     };
@@ -81,9 +100,10 @@ pub fn router(ctx: AppContext) -> Router {
         .route("/cmd/undo", post(cmd_undo))
         .route("/cmd/apply", post(cmd_apply))
         .route("/cmd/apply-confirm", post(cmd_apply_confirm))
+        .route("/cmd/queue/reset", post(cmd_reset_queue))
         .route("/cmd/update-directory", patch(cmd_update_directory))
-        .route("/cmd/show-queue", post(cmd_show_queue))
-        .route("/cmd/show-files", post(cmd_show_files))
+        .route("/cmd/queue/show", post(cmd_show_queue))
+        .route("/cmd/files/show", post(cmd_show_files))
         .route("/cmd/help", post(cmd_help))
         .route("/cmd/select/{id}", post(cmd_select))
         .route("/cmd/close", post(cmd_close))
@@ -148,12 +168,13 @@ async fn cmd_jump_prev(State(state): State<WebState>) -> impl IntoResponse {
 }
 
 async fn cmd_undo(State(state): State<WebState>) -> impl IntoResponse {
-    let undo_action = {
+    let (undo_action, undone_image_id) = {
         let mut guard = state.ctx.state.write().await;
-        guard
+        let undone = guard
             .inner_mut()
             .undo_last()
-            .and_then(|entry| entry.undo_action)
+            .map(|entry| (entry.undo_action, entry.image_id));
+        undone.unwrap_or((None, 0))
     };
 
     if let Some(action) = undo_action {
@@ -164,6 +185,9 @@ async fn cmd_undo(State(state): State<WebState>) -> impl IntoResponse {
 
     let ctx = state.ctx.clone();
     broadcast_patch(&ctx, navigation_patch(&ctx).await).await;
+    if undone_image_id != 0 {
+        patch_stack_card_if_visible(&ctx, undone_image_id).await;
+    }
     StatusCode::NO_CONTENT
 }
 
@@ -231,6 +255,15 @@ async fn cmd_apply_confirm(State(state): State<WebState>) -> impl IntoResponse {
     }
     let ctx = state.ctx.clone();
     broadcast_patch(&ctx, UiPatch::VIEWER_MODALS_AND_SIGNALS).await;
+    StatusCode::NO_CONTENT
+}
+
+async fn cmd_reset_queue(State(state): State<WebState>) -> impl IntoResponse {
+    let mut guard = state.ctx.state.write().await;
+    guard.inner_mut().reset_queue_state();
+    drop(guard);
+    let ctx = state.ctx.clone();
+    broadcast_patch(&ctx, UiPatch::RESET_QUEUE).await;
     StatusCode::NO_CONTENT
 }
 
@@ -410,6 +443,7 @@ async fn apply_decision(ctx: AppContext, side: DecisionSide) {
     let mut guard = ctx.state.write().await;
     let outcome = guard.inner_mut().apply_decision(side);
     let immediate = outcome.as_ref().map(|o| o.immediate).unwrap_or(false);
+    let changed_image_id = outcome.as_ref().map(|o| o.image_id);
     let mut undo_entry = outcome
         .as_ref()
         .map(|outcome| crate::domain::undo::UndoEntry {
@@ -457,12 +491,34 @@ async fn apply_decision(ctx: AppContext, side: DecisionSide) {
 
     drop(guard);
     broadcast_patch(&ctx, navigation_patch(&ctx).await).await;
+    if let Some(image_id) = changed_image_id {
+        patch_stack_card_if_visible(&ctx, image_id).await;
+    }
 }
 
 // undo helpers are handled in fs::apply_action_with_undo
 
 async fn run_scan(ctx: &AppContext, path: PathBuf) {
-    let images = scan_images(&path).await;
+    let mut images = scan_images(&path).await;
+
+    let existing_ids_by_path = {
+        let state = ctx.state.read().await;
+        state
+            .inner()
+            .images
+            .iter()
+            .map(|image| (image.path.clone(), image.id))
+            .collect::<HashMap<PathBuf, u64>>()
+    };
+    let mut next_id = existing_ids_by_path.values().copied().max().unwrap_or(0) + 1;
+    for image in &mut images {
+        if let Some(existing_id) = existing_ids_by_path.get(&image.path).copied() {
+            image.id = existing_id;
+        } else {
+            image.id = next_id;
+            next_id += 1;
+        }
+    }
 
     let mut state = ctx.state.write().await;
     state.inner_mut().set_images(images, Some(path));
@@ -530,15 +586,6 @@ fn bytes_response(path: &PathBuf, bytes: Bytes) -> Response {
         HeaderValue::from_str(mime.as_ref())
             .unwrap_or(HeaderValue::from_static("application/octet-stream")),
     );
-    headers.insert(
-        axum::http::header::CACHE_CONTROL,
-        HeaderValue::from_static("no-store, no-cache, max-age=0, must-revalidate"),
-    );
-    headers.insert(
-        axum::http::header::PRAGMA,
-        HeaderValue::from_static("no-cache"),
-    );
-    headers.insert(axum::http::header::EXPIRES, HeaderValue::from_static("0"));
     (headers, bytes).into_response()
 }
 
@@ -588,29 +635,28 @@ async fn build_patch_events(ctx: &AppContext, patch: UiPatch) -> Vec<Event> {
     let mut events = Vec::new();
 
     if patch.header {
-        let html = ActionHeaderTemplate { view: &view }
-            .render()
-            .unwrap_or_default();
+        let html = HeaderTemplate { view: &view }.render().unwrap_or_default();
         let patch = PatchElements::new(html)
-            .selector("#action-header")
+            .selector("#header")
             .mode(ElementPatchMode::Outer);
         events.push(patch.write_as_axum_sse_event());
     }
 
     if patch.viewer {
-        let html = ViewerRegionTemplate { view: &view }
-            .render()
-            .unwrap_or_default();
+        let html = ImageViewerTemplate {}.render().unwrap_or_default();
         let patch = PatchElements::new(html)
-            .selector("#viewer-region")
+            .selector("#image-viewer")
             .mode(ElementPatchMode::Outer);
         events.push(patch.write_as_axum_sse_event());
     }
 
+    if patch.stack {
+        events
+            .extend(build_stack_patch_events(ctx, &view, patch.viewer || patch.stack_reset).await);
+    }
+
     if patch.modals {
-        let html = ModalRegionTemplate { view: &view }
-            .render()
-            .unwrap_or_default();
+        let html = ModalTemplate { view: &view }.render().unwrap_or_default();
         let patch = PatchElements::new(html)
             .selector("#modal-region")
             .mode(ElementPatchMode::Outer);
@@ -625,6 +671,96 @@ async fn build_patch_events(ctx: &AppContext, patch: UiPatch) -> Vec<Event> {
     events
 }
 
+async fn build_stack_patch_events(
+    ctx: &AppContext,
+    view: &AppView,
+    reset_rendered: bool,
+) -> Vec<Event> {
+    let mut events = Vec::new();
+    let desired_ids: Vec<u64> = view.stack_cards.iter().map(|card| card.image_id).collect();
+    let desired_set: HashSet<u64> = desired_ids.iter().copied().collect();
+
+    let previous_ids = { ctx.rendered_stack_ids.read().await.clone() };
+    let previous_set: HashSet<u64> = previous_ids.iter().copied().collect();
+
+    if reset_rendered {
+        for image_id in &previous_ids {
+            let remove = PatchElements::new_remove(format!("#image-card-{image_id}"));
+            events.push(remove.write_as_axum_sse_event());
+        }
+        for card in &view.stack_cards {
+            let html = ImageCardTemplate { card }.render().unwrap_or_default();
+            let patch = PatchElements::new(html)
+                .selector("#image-stack")
+                .mode(ElementPatchMode::Append);
+            events.push(patch.write_as_axum_sse_event());
+        }
+        {
+            let mut ids_guard = ctx.rendered_stack_ids.write().await;
+            *ids_guard = desired_ids;
+        }
+        return events;
+    }
+
+    for image_id in previous_ids.iter().filter(|id| !desired_set.contains(id)) {
+        let remove = PatchElements::new_remove(format!("#image-card-{image_id}"));
+        events.push(remove.write_as_axum_sse_event());
+    }
+
+    let added_start: Vec<&StackCard> = view
+        .stack_cards
+        .iter()
+        .take_while(|card| !previous_set.contains(&card.image_id))
+        .collect();
+    for card in added_start.iter().rev() {
+        let html = ImageCardTemplate { card }.render().unwrap_or_default();
+        let patch = PatchElements::new(html)
+            .selector("#image-stack")
+            .mode(ElementPatchMode::Prepend);
+        events.push(patch.write_as_axum_sse_event());
+    }
+
+    let added_end: Vec<&StackCard> = view
+        .stack_cards
+        .iter()
+        .rev()
+        .take_while(|card| !previous_set.contains(&card.image_id))
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    for card in added_end {
+        let html = ImageCardTemplate { card }.render().unwrap_or_default();
+        let patch = PatchElements::new(html)
+            .selector("#image-stack")
+            .mode(ElementPatchMode::Append);
+        events.push(patch.write_as_axum_sse_event());
+    }
+
+    {
+        let mut ids_guard = ctx.rendered_stack_ids.write().await;
+        *ids_guard = desired_ids;
+    }
+
+    events
+}
+
+async fn patch_stack_card_if_visible(ctx: &AppContext, image_id: u64) {
+    let view = build_view(ctx).await;
+    let Some(card) = view
+        .stack_cards
+        .iter()
+        .find(|card| card.image_id == image_id)
+    else {
+        return;
+    };
+    let html = ImageCardTemplate { card }.render().unwrap_or_default();
+    let patch = PatchElements::new(html)
+        .selector(format!("#image-card-{image_id}"))
+        .mode(ElementPatchMode::Outer);
+    let _ = ctx.sse_tx.send(patch.write_as_axum_sse_event());
+}
+
 fn counter_signals_json(view: &AppView) -> String {
     serde_json::json!({
         "counterLeftAction": view.left_action_count,
@@ -632,6 +768,7 @@ fn counter_signals_json(view: &AppView) -> String {
         "counterImageIndex": if view.total > 0 { view.index } else { 0 },
         "counterImageTotal": view.total,
         "counterQueueCount": view.queue_count,
+        "stackCursor": view.stack_cursor,
         "currentPath": view.current_path_label,
         "directorySelectEnabled": view.directory_select_enabled
     })
@@ -754,17 +891,10 @@ async fn build_view(ctx: &AppContext) -> AppView {
         Vec::new()
     };
     let stack_cards = build_stack_cards(inner, 5);
-    let nav_direction = match inner.nav_direction {
-        Some(crate::domain::state::NavDirection::Up) => "up".to_string(),
-        Some(crate::domain::state::NavDirection::Down) => "down".to_string(),
-        None => "none".to_string(),
-    };
     AppView {
-        has_images: current.is_some(),
         directory_select_enabled: cfg!(feature = "tauri"),
         stack_cards,
-        nav_direction,
-        nav_tick: inner.nav_tick,
+        stack_cursor: inner.cursor,
         current_image_id: current.map(|entry| entry.id).unwrap_or(0),
         current_path_label,
         left_action_label: action_config_label(&inner.action_mapping.left),
@@ -775,7 +905,6 @@ async fn build_view(ctx: &AppContext) -> AppView {
         total,
         queue_count,
         file_count,
-        queue_mode: inner.queue_mode,
         show_delete_confirm,
         show_queue_modal,
         show_files_modal,
@@ -799,11 +928,9 @@ async fn build_view(ctx: &AppContext) -> AppView {
 
 #[derive(Clone, Debug)]
 pub struct AppView {
-    pub has_images: bool,
     pub directory_select_enabled: bool,
     pub stack_cards: Vec<StackCard>,
-    pub nav_direction: String,
-    pub nav_tick: u64,
+    pub stack_cursor: usize,
     pub current_image_id: u64,
     pub current_path_label: String,
     pub left_action_label: String,
@@ -814,7 +941,6 @@ pub struct AppView {
     pub total: usize,
     pub queue_count: usize,
     pub file_count: usize,
-    pub queue_mode: bool,
     pub show_delete_confirm: bool,
     pub show_queue_modal: bool,
     pub show_files_modal: bool,
@@ -851,7 +977,7 @@ pub struct StackCard {
     pub image_src: String,
     pub alignment: String,
     pub action_item: QueueItem,
-    pub top_percent: f32,
+    pub stack_index: usize,
 }
 
 fn decision_side(image: &ImageEntry) -> Option<DecisionSide> {
@@ -898,27 +1024,16 @@ fn build_stack_cards(inner: &crate::domain::state::AppStateInner, radius: usize)
         .filter_map(|pos| {
             let idx = *inner.order.get(pos)?;
             let image = inner.images.get(idx)?;
-            let offset = pos as isize - inner.cursor as isize;
-            let top_percent = 16.0 + (offset as f32 * 70.0);
             let action_item = queue_item_for_image(image, inner.root_dir.as_ref());
-            let cache_key = query_encode_component(&action_item.file_label);
             Some(StackCard {
                 image_id: image.id,
-                image_src: format!("/image/{}?k={}", image.id, cache_key),
+                image_src: format!("/image/{}", image.id),
                 alignment: image_alignment_for(image),
                 action_item,
-                top_percent,
+                stack_index: pos,
             })
         })
         .collect()
-}
-
-fn query_encode_component(value: &str) -> String {
-    let encoded = serde_urlencoded::to_string([("k", value)]).unwrap_or_default();
-    encoded
-        .strip_prefix("k=")
-        .unwrap_or(encoded.as_str())
-        .to_string()
 }
 
 fn queue_item_from_action(
@@ -1047,18 +1162,22 @@ struct MainTemplate {
 
 #[derive(Template)]
 #[template(path = "partials/header.html")]
-struct ActionHeaderTemplate<'a> {
+struct HeaderTemplate<'a> {
     view: &'a AppView,
 }
 
 #[derive(Template)]
 #[template(path = "partials/viewer.html")]
-struct ViewerRegionTemplate<'a> {
+struct ImageViewerTemplate {}
+
+#[derive(Template)]
+#[template(path = "partials/modal.html")]
+struct ModalTemplate<'a> {
     view: &'a AppView,
 }
 
 #[derive(Template)]
-#[template(path = "partials/modal.html")]
-struct ModalRegionTemplate<'a> {
-    view: &'a AppView,
+#[template(path = "partials/image_card.html")]
+struct ImageCardTemplate<'a> {
+    card: &'a StackCard,
 }

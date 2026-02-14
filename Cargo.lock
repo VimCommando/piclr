@@ -2916,7 +2916,6 @@ dependencies = [
  "rfd",
  "serde",
  "serde_json",
- "serde_urlencoded",
  "tauri",
  "tauri-build",
  "thiserror 1.0.69",

@@ -45,6 +45,7 @@ pub struct AppContext {
     pub state: Arc<RwLock<AppStateMachine>>,
     pub config: AppConfig,
     pub cache: Arc<RwLock<HashMap<PathBuf, Bytes>>>,
+    pub rendered_stack_ids: Arc<RwLock<Vec<u64>>>,
     pub sse_tx: broadcast::Sender<axum::response::sse::Event>,
 }
 
@@ -55,6 +56,7 @@ impl AppContext {
             state: Arc::new(RwLock::new(state)),
             config,
             cache: Arc::new(RwLock::new(HashMap::new())),
+            rendered_stack_ids: Arc::new(RwLock::new(Vec::new())),
             sse_tx,
         }
     }

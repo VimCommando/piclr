@@ -262,6 +262,17 @@ impl AppStateInner {
         })
     }
 
+    pub fn reset_queue_state(&mut self) {
+        for image in &mut self.images {
+            image.decision = DecisionState::Undecided;
+            image.queued_action = None;
+            image.rename_sequence = None;
+        }
+        self.undo_stack.clear();
+        self.rename_counter = 1;
+        self.update_preload();
+    }
+
     pub fn record_undo(&mut self, entry: UndoEntry) {
         self.undo_stack.push(entry);
     }
