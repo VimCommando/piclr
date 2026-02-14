@@ -7,12 +7,12 @@
         <div class="action-header-half action-header-left">
             <span class="action-header-title">Left</span>
             <span class="action-header-value">{{ view.left_action_label }}</span>
-            <span class="action-header-count">{{ view.left_action_count }}</span>
+            <span class="action-header-count" data-text="$counterLeftAction"></span>
         </div>
         <div class="action-header-half action-header-right">
             <span class="action-header-title">Right</span>
             <span class="action-header-value">{{ view.right_action_label }}</span>
-            <span class="action-header-count">{{ view.right_action_count }}</span>
+            <span class="action-header-count" data-text="$counterRightAction"></span>
         </div>
     </header>
 
@@ -74,10 +74,10 @@
         </div>
         <div class="status">
             <button class="counter-button" data-on:click="@post('/cmd/show-files')">
-                Image: {% if view.total > 0 %}{{ view.index }} / {{ view.total }}{% else %}0 / 0{% endif %}
+                Image: <span data-text="$counterImageIndex"></span> / <span data-text="$counterImageTotal"></span>
             </button>
             <button class="queue-button" data-on:click="@post('/cmd/show-queue')">
-                Queue: {{ view.queue_count }}
+                Queue: <span data-text="$counterQueueCount"></span>
             </button>
         </div>
     </footer>

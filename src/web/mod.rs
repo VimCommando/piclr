@@ -15,7 +15,7 @@ use bytes::Bytes;
 use mime_guess::MimeGuess;
 use tracing::warn;
 use serde::Deserialize;
-use datastar::prelude::{ElementPatchMode, PatchElements};
+use datastar::prelude::{ElementPatchMode, PatchElements, PatchSignals};
 use tokio::sync::{broadcast, RwLock};
 
 #[derive(Deserialize)]
@@ -440,8 +440,9 @@ async fn events(State(state): State<WebState>) -> impl IntoResponse {
     let ctx = state.ctx.clone();
     let mut rx = ctx.sse_tx.subscribe();
     Sse::new(stream_fn(move |mut yielder: Yielder<Result<Event, Infallible>>| async move {
-        let initial = build_patch_event(&ctx).await;
-        yielder.yield_item(Ok(initial)).await;
+        let (initial_elements, initial_signals) = build_patch_events(&ctx).await;
+        yielder.yield_item(Ok(initial_elements)).await;
+        yielder.yield_item(Ok(initial_signals)).await;
 
         loop {
             match rx.recv().await {
@@ -457,18 +458,34 @@ async fn events(State(state): State<WebState>) -> impl IntoResponse {
 }
 
 async fn broadcast_patch(ctx: &AppContext) {
-    let event = build_patch_event(ctx).await;
-    let _ = ctx.sse_tx.send(event);
+    let (elements_event, signals_event) = build_patch_events(ctx).await;
+    let _ = ctx.sse_tx.send(elements_event);
+    let _ = ctx.sse_tx.send(signals_event);
 }
 
-async fn build_patch_event(ctx: &AppContext) -> Event {
+async fn build_patch_events(ctx: &AppContext) -> (Event, Event) {
     let view = build_view(ctx).await;
     let template = AppTemplate { view };
     let html = template.render().unwrap_or_default();
-    let patch = PatchElements::new(html)
+    let elements_patch = PatchElements::new(html)
         .selector("#app")
         .mode(ElementPatchMode::Outer);
-    patch.write_as_axum_sse_event()
+    let signals_patch = PatchSignals::new(counter_signals_json(&template.view));
+    (
+        elements_patch.write_as_axum_sse_event(),
+        signals_patch.write_as_axum_sse_event(),
+    )
+}
+
+fn counter_signals_json(view: &AppView) -> String {
+    serde_json::json!({
+        "counterLeftAction": view.left_action_count,
+        "counterRightAction": view.right_action_count,
+        "counterImageIndex": if view.total > 0 { view.index } else { 0 },
+        "counterImageTotal": view.total,
+        "counterQueueCount": view.queue_count
+    })
+    .to_string()
 }
 
 async fn build_view(ctx: &AppContext) -> AppView {
