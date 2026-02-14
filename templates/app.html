@@ -18,6 +18,20 @@
 
     {% if view.has_images %}
     <main class="viewer">
+        <div class="stack-click-zones" aria-hidden="true">
+            <button
+                class="stack-click-zone stack-click-zone-left"
+                type="button"
+                tabindex="-1"
+                data-on:click="@post('/cmd/left')"
+            ></button>
+            <button
+                class="stack-click-zone stack-click-zone-right"
+                type="button"
+                tabindex="-1"
+                data-on:click="@post('/cmd/right')"
+            ></button>
+        </div>
         <div class="image-stack">
             {% for card in view.stack_cards %}
             <image-card
