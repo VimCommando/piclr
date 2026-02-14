@@ -1,0 +1,46 @@
+<div id="viewer-region">
+    {% if view.has_images %}
+    <main class="viewer">
+        <div class="stack-click-zones" aria-hidden="true">
+            <button
+                class="stack-click-zone stack-click-zone-left"
+                type="button"
+                tabindex="-1"
+                data-on:click="@post('/cmd/left')"
+            ></button>
+            <button
+                class="stack-click-zone stack-click-zone-right"
+                type="button"
+                tabindex="-1"
+                data-on:click="@post('/cmd/right')"
+            ></button>
+        </div>
+        <div class="image-stack">
+            {% for card in view.stack_cards %}
+            <image-card
+                id="image-card-{{ card.image_id }}"
+                class="align-{{ card.alignment }}"
+                style="--stack-top: {{ card.top_percent }}%;"
+            >
+                <div class="card-media">
+                    <img
+                        class="card-img"
+                        src="/image/{{ card.image_id }}"
+                        alt="{{ card.action_item.file_label }}"
+                    />
+                </div>
+                <div class="card-caption queue-entry queue-tone-{{ card.action_item.action_tone }}">
+                    <span class="queue-arrow">{{ card.action_item.arrow }}</span>
+                    <span class="queue-action">{{ card.action_item.action_label }}</span>
+                    <code class="queue-file">{{ card.action_item.file_label }}</code>
+                </div>
+            </image-card>
+            {% endfor %}
+        </div>
+    </main>
+    {% else %}
+    <main class="empty">
+        <p>No images loaded.</p>
+    </main>
+    {% endif %}
+</div>

@@ -32,6 +32,51 @@ pub struct WebState {
     pub ctx: AppContext,
 }
 
+#[derive(Clone, Copy)]
+struct UiPatch {
+    header: bool,
+    viewer: bool,
+    modals: bool,
+    signals: bool,
+}
+
+impl UiPatch {
+    const ALL: Self = Self {
+        header: true,
+        viewer: true,
+        modals: true,
+        signals: true,
+    };
+
+    const VIEWER_AND_SIGNALS: Self = Self {
+        header: false,
+        viewer: true,
+        modals: false,
+        signals: true,
+    };
+
+    const MODALS_ONLY: Self = Self {
+        header: false,
+        viewer: false,
+        modals: true,
+        signals: false,
+    };
+
+    const MODALS_AND_SIGNALS: Self = Self {
+        header: false,
+        viewer: false,
+        modals: true,
+        signals: true,
+    };
+
+    const VIEWER_MODALS_AND_SIGNALS: Self = Self {
+        header: false,
+        viewer: true,
+        modals: true,
+        signals: true,
+    };
+}
+
 pub fn router(ctx: AppContext) -> Router {
     let state = WebState { ctx };
     Router::new()
@@ -87,7 +132,7 @@ async fn cmd_next(State(state): State<WebState>) -> impl IntoResponse {
     guard.inner_mut().next();
     drop(guard);
     let ctx = state.ctx.clone();
-    broadcast_patch(&ctx).await;
+    broadcast_patch(&ctx, navigation_patch(&ctx).await).await;
     StatusCode::NO_CONTENT
 }
 
@@ -96,7 +141,7 @@ async fn cmd_prev(State(state): State<WebState>) -> impl IntoResponse {
     guard.inner_mut().prev();
     drop(guard);
     let ctx = state.ctx.clone();
-    broadcast_patch(&ctx).await;
+    broadcast_patch(&ctx, navigation_patch(&ctx).await).await;
     StatusCode::NO_CONTENT
 }
 
@@ -105,7 +150,7 @@ async fn cmd_jump_next(State(state): State<WebState>) -> impl IntoResponse {
     guard.inner_mut().jump_next_undecided();
     drop(guard);
     let ctx = state.ctx.clone();
-    broadcast_patch(&ctx).await;
+    broadcast_patch(&ctx, navigation_patch(&ctx).await).await;
     StatusCode::NO_CONTENT
 }
 
@@ -114,7 +159,7 @@ async fn cmd_jump_prev(State(state): State<WebState>) -> impl IntoResponse {
     guard.inner_mut().jump_prev_undecided();
     drop(guard);
     let ctx = state.ctx.clone();
-    broadcast_patch(&ctx).await;
+    broadcast_patch(&ctx, navigation_patch(&ctx).await).await;
     StatusCode::NO_CONTENT
 }
 
@@ -131,7 +176,7 @@ async fn cmd_undo(State(state): State<WebState>) -> impl IntoResponse {
     }
 
     let ctx = state.ctx.clone();
-    broadcast_patch(&ctx).await;
+    broadcast_patch(&ctx, navigation_patch(&ctx).await).await;
     StatusCode::NO_CONTENT
 }
 
@@ -151,13 +196,13 @@ async fn cmd_apply(State(state): State<WebState>) -> impl IntoResponse {
         guard.inner_mut().show_view(ModalView::DeleteConfirm);
         drop(guard);
         let ctx = state.ctx.clone();
-        broadcast_patch(&ctx).await;
+        broadcast_patch(&ctx, UiPatch::MODALS_ONLY).await;
         return StatusCode::NO_CONTENT;
     }
 
     apply_queue(&state.ctx).await;
     let ctx = state.ctx.clone();
-    broadcast_patch(&ctx).await;
+    broadcast_patch(&ctx, UiPatch::MODALS_AND_SIGNALS).await;
     StatusCode::NO_CONTENT
 }
 
@@ -168,7 +213,7 @@ async fn cmd_apply_confirm(State(state): State<WebState>) -> impl IntoResponse {
     }
     apply_queue(&state.ctx).await;
     let ctx = state.ctx.clone();
-    broadcast_patch(&ctx).await;
+    broadcast_patch(&ctx, UiPatch::MODALS_AND_SIGNALS).await;
     StatusCode::NO_CONTENT
 }
 
@@ -229,7 +274,7 @@ async fn cmd_open(
         }
     }
     let ctx = state.ctx.clone();
-    broadcast_patch(&ctx).await;
+    broadcast_patch(&ctx, UiPatch::VIEWER_MODALS_AND_SIGNALS).await;
     StatusCode::NO_CONTENT
 }
 
@@ -243,7 +288,7 @@ async fn cmd_show_queue(State(state): State<WebState>) -> impl IntoResponse {
     }
     drop(guard);
     let ctx = state.ctx.clone();
-    broadcast_patch(&ctx).await;
+    broadcast_patch(&ctx, UiPatch::MODALS_ONLY).await;
     StatusCode::NO_CONTENT
 }
 
@@ -257,7 +302,7 @@ async fn cmd_show_files(State(state): State<WebState>) -> impl IntoResponse {
     }
     drop(guard);
     let ctx = state.ctx.clone();
-    broadcast_patch(&ctx).await;
+    broadcast_patch(&ctx, UiPatch::MODALS_ONLY).await;
     StatusCode::NO_CONTENT
 }
 
@@ -271,7 +316,7 @@ async fn cmd_help(State(state): State<WebState>) -> impl IntoResponse {
     }
     drop(guard);
     let ctx = state.ctx.clone();
-    broadcast_patch(&ctx).await;
+    broadcast_patch(&ctx, UiPatch::MODALS_ONLY).await;
     StatusCode::NO_CONTENT
 }
 
@@ -284,7 +329,7 @@ async fn cmd_select(State(state): State<WebState>, Path(id): Path<u64>) -> impl 
     }
     drop(guard);
     let ctx = state.ctx.clone();
-    broadcast_patch(&ctx).await;
+    broadcast_patch(&ctx, UiPatch::VIEWER_MODALS_AND_SIGNALS).await;
     if selected {
         StatusCode::NO_CONTENT
     } else {
@@ -297,7 +342,7 @@ async fn cmd_close(State(state): State<WebState>) -> impl IntoResponse {
     guard.inner_mut().close_view();
     drop(guard);
     let ctx = state.ctx.clone();
-    broadcast_patch(&ctx).await;
+    broadcast_patch(&ctx, UiPatch::MODALS_ONLY).await;
     StatusCode::NO_CONTENT
 }
 
@@ -354,7 +399,7 @@ async fn apply_decision(ctx: AppContext, side: DecisionSide) {
     }
 
     drop(guard);
-    broadcast_patch(&ctx).await;
+    broadcast_patch(&ctx, navigation_patch(&ctx).await).await;
 }
 
 // undo helpers are handled in fs::apply_action_with_undo
@@ -440,9 +485,10 @@ async fn events(State(state): State<WebState>) -> impl IntoResponse {
     let ctx = state.ctx.clone();
     let mut rx = ctx.sse_tx.subscribe();
     Sse::new(stream_fn(move |mut yielder: Yielder<Result<Event, Infallible>>| async move {
-        let (initial_elements, initial_signals) = build_patch_events(&ctx).await;
-        yielder.yield_item(Ok(initial_elements)).await;
-        yielder.yield_item(Ok(initial_signals)).await;
+        let initial_events = build_patch_events(&ctx, UiPatch::ALL).await;
+        for event in initial_events {
+            yielder.yield_item(Ok(event)).await;
+        }
 
         loop {
             match rx.recv().await {
@@ -457,24 +503,53 @@ async fn events(State(state): State<WebState>) -> impl IntoResponse {
     .keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(20)).text("keep-alive"))
 }
 
-async fn broadcast_patch(ctx: &AppContext) {
-    let (elements_event, signals_event) = build_patch_events(ctx).await;
-    let _ = ctx.sse_tx.send(elements_event);
-    let _ = ctx.sse_tx.send(signals_event);
+async fn broadcast_patch(ctx: &AppContext, patch: UiPatch) {
+    let events = build_patch_events(ctx, patch).await;
+    for event in events {
+        let _ = ctx.sse_tx.send(event);
+    }
 }
 
-async fn build_patch_events(ctx: &AppContext) -> (Event, Event) {
+async fn build_patch_events(ctx: &AppContext, patch: UiPatch) -> Vec<Event> {
     let view = build_view(ctx).await;
-    let template = AppTemplate { view };
-    let html = template.render().unwrap_or_default();
-    let elements_patch = PatchElements::new(html)
-        .selector("#app")
-        .mode(ElementPatchMode::Outer);
-    let signals_patch = PatchSignals::new(counter_signals_json(&template.view));
-    (
-        elements_patch.write_as_axum_sse_event(),
-        signals_patch.write_as_axum_sse_event(),
-    )
+    let mut events = Vec::new();
+
+    if patch.header {
+        let html = ActionHeaderTemplate { view: &view }
+            .render()
+            .unwrap_or_default();
+        let patch = PatchElements::new(html)
+            .selector("#action-header")
+            .mode(ElementPatchMode::Outer);
+        events.push(patch.write_as_axum_sse_event());
+    }
+
+    if patch.viewer {
+        let html = ViewerRegionTemplate { view: &view }
+            .render()
+            .unwrap_or_default();
+        let patch = PatchElements::new(html)
+            .selector("#viewer-region")
+            .mode(ElementPatchMode::Outer);
+        events.push(patch.write_as_axum_sse_event());
+    }
+
+    if patch.modals {
+        let html = ModalRegionTemplate { view: &view }
+            .render()
+            .unwrap_or_default();
+        let patch = PatchElements::new(html)
+            .selector("#modal-region")
+            .mode(ElementPatchMode::Outer);
+        events.push(patch.write_as_axum_sse_event());
+    }
+
+    if patch.signals {
+        let patch = PatchSignals::new(counter_signals_json(&view));
+        events.push(patch.write_as_axum_sse_event());
+    }
+
+    events
 }
 
 fn counter_signals_json(view: &AppView) -> String {
@@ -488,6 +563,16 @@ fn counter_signals_json(view: &AppView) -> String {
     .to_string()
 }
 
+async fn navigation_patch(ctx: &AppContext) -> UiPatch {
+    let guard = ctx.state.read().await;
+    let inner = guard.inner();
+    if inner.has_view(ModalView::Queue) || inner.has_view(ModalView::Files) {
+        UiPatch::VIEWER_MODALS_AND_SIGNALS
+    } else {
+        UiPatch::VIEWER_AND_SIGNALS
+    }
+}
+
 async fn build_view(ctx: &AppContext) -> AppView {
     let guard = ctx.state.read().await;
     let inner = guard.inner();
@@ -499,61 +584,64 @@ async fn build_view(ctx: &AppContext) -> AppView {
     tokio::spawn(async move {
         maintain_cache_window(cache, window_paths).await;
     });
-    let queue_count = inner
-        .images
-        .iter()
-        .filter(|image| image.queued_action.is_some())
-        .count();
-    let left_action_count = inner
-        .images
-        .iter()
-        .filter(|image| matches!(decision_side(image), Some(DecisionSide::Left)))
-        .count();
-    let right_action_count = inner
-        .images
-        .iter()
-        .filter(|image| matches!(decision_side(image), Some(DecisionSide::Right)))
-        .count();
+    let mut queue_count = 0usize;
+    let mut left_action_count = 0usize;
+    let mut right_action_count = 0usize;
+    for image in &inner.images {
+        if image.queued_action.is_some() {
+            queue_count += 1;
+        }
+        match decision_side(image) {
+            Some(DecisionSide::Left) => left_action_count += 1,
+            Some(DecisionSide::Right) => right_action_count += 1,
+            None => {}
+        }
+    }
     let file_count = inner.images.len();
+    let show_queue_modal = inner.has_view(ModalView::Queue);
+    let show_files_modal = inner.has_view(ModalView::Files);
+    let show_help_modal = inner.has_view(ModalView::Help);
+    let show_open_modal = inner.has_view(ModalView::OpenDirectory);
+    let show_delete_confirm = inner.has_view(ModalView::DeleteConfirm);
     let queue_modal_z = modal_layer(&inner.view_stack, ModalView::Queue);
     let files_modal_z = modal_layer(&inner.view_stack, ModalView::Files);
     let help_modal_z = modal_layer(&inner.view_stack, ModalView::Help);
     let open_modal_z = modal_layer(&inner.view_stack, ModalView::OpenDirectory);
     let delete_modal_z = modal_layer(&inner.view_stack, ModalView::DeleteConfirm);
-    let mut queue_items: Vec<QueueItem> = inner
-        .images
-        .iter()
-        .filter_map(|image| {
-            let queued = image.queued_action.as_ref()?;
-            Some(queue_item_from_action(
-                image,
-                queued,
-                decision_side(image),
-                inner.root_dir.as_ref(),
-            ))
-        })
-        .collect();
-    let queue_has_current = queue_items
-        .iter()
-        .any(|item: &QueueItem| item.image_id == current.map(|e| e.id).unwrap_or(0));
+    let mut queue_items: Vec<QueueItem> = Vec::new();
+    let mut queue_has_current = false;
+    if show_queue_modal {
+        let current_id = current.map(|e| e.id).unwrap_or(0);
+        queue_items = inner
+            .images
+            .iter()
+            .filter_map(|image| {
+                let queued = image.queued_action.as_ref()?;
+                if image.id == current_id {
+                    queue_has_current = true;
+                }
+                Some(queue_item_from_action(
+                    image,
+                    queued,
+                    decision_side(image),
+                    inner.root_dir.as_ref(),
+                ))
+            })
+            .collect();
+    }
     let mut queue_insert_before_id: Option<u64> = None;
     let mut queue_insert_at_end = false;
-    if !queue_items.is_empty() && !queue_has_current {
+    if show_queue_modal && !queue_items.is_empty() && !queue_has_current {
         if let Some(current_id) = current.map(|entry| entry.id) {
             let current_pos = inner.images.iter().position(|image| image.id == current_id);
             if let Some(current_pos) = current_pos {
-                let mut queued_positions: Vec<(usize, u64)> = inner
+                if let Some(before_id) = inner
                     .images
                     .iter()
                     .enumerate()
                     .filter(|(_, image)| image.queued_action.is_some())
-                    .map(|(idx, image)| (idx, image.id))
-                    .collect();
-                queued_positions.sort_by_key(|(idx, _)| *idx);
-                if let Some((_, before_id)) = queued_positions
-                    .iter()
                     .find(|(idx, _)| *idx > current_pos)
-                    .copied()
+                    .map(|(_, image)| image.id)
                 {
                     queue_insert_before_id = Some(before_id);
                 } else {
@@ -568,16 +656,20 @@ async fn build_view(ctx: &AppContext) -> AppView {
             .filter(|item| item.image_id == before_id)
             .for_each(|item| item.is_insert_before = true);
     }
-    let file_items = inner
-        .images
-        .iter()
-        .map(|image| match &image.decision {
-            crate::domain::DecisionState::Decided { side, action } => {
-                queue_item_from_action(image, action, Some(*side), inner.root_dir.as_ref())
-            }
-            crate::domain::DecisionState::Undecided => queue_item_none(image, inner.root_dir.as_ref()),
-        })
-        .collect();
+    let file_items = if show_files_modal {
+        inner
+            .images
+            .iter()
+            .map(|image| match &image.decision {
+                crate::domain::DecisionState::Decided { side, action } => {
+                    queue_item_from_action(image, action, Some(*side), inner.root_dir.as_ref())
+                }
+                crate::domain::DecisionState::Undecided => queue_item_none(image, inner.root_dir.as_ref()),
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
     let stack_cards = build_stack_cards(inner, 5);
     let nav_direction = match inner.nav_direction {
         Some(crate::domain::state::NavDirection::Up) => "up".to_string(),
@@ -599,11 +691,11 @@ async fn build_view(ctx: &AppContext) -> AppView {
         queue_count,
         file_count,
         queue_mode: inner.queue_mode,
-        show_open_modal: inner.has_view(ModalView::OpenDirectory),
-        show_delete_confirm: inner.has_view(ModalView::DeleteConfirm),
-        show_queue_modal: inner.has_view(ModalView::Queue),
-        show_files_modal: inner.has_view(ModalView::Files),
-        show_help_modal: inner.has_view(ModalView::Help),
+        show_open_modal,
+        show_delete_confirm,
+        show_queue_modal,
+        show_files_modal,
+        show_help_modal,
         open_modal_z,
         delete_modal_z,
         queue_modal_z,
@@ -847,7 +939,19 @@ struct MainTemplate {
 }
 
 #[derive(Template)]
-#[template(path = "app.html")]
-struct AppTemplate {
-    view: AppView,
+#[template(path = "partials/action_header.html")]
+struct ActionHeaderTemplate<'a> {
+    view: &'a AppView,
+}
+
+#[derive(Template)]
+#[template(path = "partials/viewer_region.html")]
+struct ViewerRegionTemplate<'a> {
+    view: &'a AppView,
+}
+
+#[derive(Template)]
+#[template(path = "partials/modal_region.html")]
+struct ModalRegionTemplate<'a> {
+    view: &'a AppView,
 }
