@@ -1,26 +1,29 @@
+use askama::Template;
+use asynk_strim::{Yielder, stream_fn};
+use axum::Router;
+use axum::extract::{Path, State};
+use axum::http::{HeaderMap, HeaderValue, StatusCode};
+use axum::response::sse::{Event, KeepAlive};
+use axum::response::{Html, IntoResponse, Response, Sse};
+use axum::routing::{get, patch, post};
+use bytes::Bytes;
+use core::convert::Infallible;
+use datastar::axum::ReadSignals;
+use datastar::prelude::{ElementPatchMode, PatchElements, PatchSignals};
+use mime_guess::MimeGuess;
+use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
-use askama::Template;
-use axum::extract::{Path, State};
-use axum::http::{HeaderMap, HeaderValue, StatusCode};
-use axum::response::{Html, IntoResponse, Response, Sse};
-use axum::response::sse::{Event, KeepAlive};
-use axum::routing::{get, patch, post};
-use axum::Router;
-use asynk_strim::{stream_fn, Yielder};
-use core::convert::Infallible;
-use bytes::Bytes;
-use mime_guess::MimeGuess;
+use tokio::sync::{RwLock, broadcast};
 use tracing::warn;
-use serde::Deserialize;
-use datastar::axum::ReadSignals;
-use datastar::prelude::{ElementPatchMode, PatchElements, PatchSignals};
-use tokio::sync::{broadcast, RwLock};
 
 use crate::app::AppContext;
 use crate::domain::{ActionConfig, DecisionSide, ImageEntry, ModalView};
-use crate::fs::{apply_action, apply_action_with_undo, apply_undo_action, load_image_bytes, scan_images, FsConfig};
+use crate::fs::{
+    FsConfig, apply_action, apply_action_with_undo, apply_undo_action, load_image_bytes,
+    scan_images,
+};
 
 #[derive(Clone)]
 pub struct WebState {
@@ -147,7 +150,10 @@ async fn cmd_jump_prev(State(state): State<WebState>) -> impl IntoResponse {
 async fn cmd_undo(State(state): State<WebState>) -> impl IntoResponse {
     let undo_action = {
         let mut guard = state.ctx.state.write().await;
-        guard.inner_mut().undo_last().and_then(|entry| entry.undo_action)
+        guard
+            .inner_mut()
+            .undo_last()
+            .and_then(|entry| entry.undo_action)
     };
 
     if let Some(action) = undo_action {
@@ -239,7 +245,10 @@ struct ApplySummary {
 async fn apply_queue(ctx: &AppContext) -> ApplySummary {
     let (root_dir, destructive) = {
         let guard = ctx.state.read().await;
-        (guard.inner().root_dir.clone(), ctx.config.destructive_delete)
+        (
+            guard.inner().root_dir.clone(),
+            ctx.config.destructive_delete,
+        )
     };
 
     let Some(root_dir) = root_dir else {
@@ -253,7 +262,9 @@ async fn apply_queue(ctx: &AppContext) -> ApplySummary {
     for image in images {
         if let Some(action) = image.queued_action {
             summary.total += 1;
-            if let Err(err) = apply_action(&config, &image.path, &action, image.rename_sequence).await {
+            if let Err(err) =
+                apply_action(&config, &image.path, &action, image.rename_sequence).await
+            {
                 summary.failed += 1;
                 summary
                     .errors
@@ -264,7 +275,11 @@ async fn apply_queue(ctx: &AppContext) -> ApplySummary {
             }
         }
     }
-    guard.inner_mut().images.iter_mut().for_each(|image| image.queued_action = None);
+    guard
+        .inner_mut()
+        .images
+        .iter_mut()
+        .for_each(|image| image.queued_action = None);
     drop(guard);
     summary
 }
@@ -386,19 +401,24 @@ async fn cmd_close(State(state): State<WebState>) -> impl IntoResponse {
 async fn apply_decision(ctx: AppContext, side: DecisionSide) {
     let (root_dir, destructive) = {
         let guard = ctx.state.read().await;
-        (guard.inner().root_dir.clone(), ctx.config.destructive_delete)
+        (
+            guard.inner().root_dir.clone(),
+            ctx.config.destructive_delete,
+        )
     };
 
     let mut guard = ctx.state.write().await;
     let outcome = guard.inner_mut().apply_decision(side);
     let immediate = outcome.as_ref().map(|o| o.immediate).unwrap_or(false);
-    let mut undo_entry = outcome.as_ref().map(|outcome| crate::domain::undo::UndoEntry {
-        image_id: outcome.image_id,
-        previous_decision: outcome.previous_decision.clone(),
-        previous_queue: outcome.previous_queue.clone(),
-        previous_cursor: outcome.cursor_before,
-        undo_action: None,
-    });
+    let mut undo_entry = outcome
+        .as_ref()
+        .map(|outcome| crate::domain::undo::UndoEntry {
+            image_id: outcome.image_id,
+            previous_decision: outcome.previous_decision.clone(),
+            previous_queue: outcome.previous_queue.clone(),
+            previous_cursor: outcome.cursor_before,
+            undo_action: None,
+        });
 
     if immediate {
         if let (Some(root_dir), Some(outcome), Some(undo)) =
@@ -475,7 +495,12 @@ async fn image(State(state): State<WebState>, Path(id): Path<u64>) -> Response {
         }
     };
 
-    state.ctx.cache.write().await.insert(path.clone(), bytes.clone());
+    state
+        .ctx
+        .cache
+        .write()
+        .await
+        .insert(path.clone(), bytes.clone());
     bytes_response(&path, bytes)
 }
 
@@ -502,7 +527,8 @@ fn bytes_response(path: &PathBuf, bytes: Bytes) -> Response {
     let mut headers = HeaderMap::new();
     headers.insert(
         axum::http::header::CONTENT_TYPE,
-        HeaderValue::from_str(mime.as_ref()).unwrap_or(HeaderValue::from_static("application/octet-stream")),
+        HeaderValue::from_str(mime.as_ref())
+            .unwrap_or(HeaderValue::from_static("application/octet-stream")),
     );
     headers.insert(
         axum::http::header::CACHE_CONTROL,
@@ -512,10 +538,7 @@ fn bytes_response(path: &PathBuf, bytes: Bytes) -> Response {
         axum::http::header::PRAGMA,
         HeaderValue::from_static("no-cache"),
     );
-    headers.insert(
-        axum::http::header::EXPIRES,
-        HeaderValue::from_static("0"),
-    );
+    headers.insert(axum::http::header::EXPIRES, HeaderValue::from_static("0"));
     (headers, bytes).into_response()
 }
 
@@ -528,23 +551,29 @@ async fn render_full_page(ctx: &AppContext) -> Html<String> {
 async fn events(State(state): State<WebState>) -> impl IntoResponse {
     let ctx = state.ctx.clone();
     let mut rx = ctx.sse_tx.subscribe();
-    Sse::new(stream_fn(move |mut yielder: Yielder<Result<Event, Infallible>>| async move {
-        let initial_events = build_patch_events(&ctx, UiPatch::ALL).await;
-        for event in initial_events {
-            yielder.yield_item(Ok(event)).await;
-        }
-
-        loop {
-            match rx.recv().await {
-                Ok(event) => {
-                    yielder.yield_item(Ok(event)).await;
-                }
-                Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                Err(broadcast::error::RecvError::Closed) => break,
+    Sse::new(stream_fn(
+        move |mut yielder: Yielder<Result<Event, Infallible>>| async move {
+            let initial_events = build_patch_events(&ctx, UiPatch::ALL).await;
+            for event in initial_events {
+                yielder.yield_item(Ok(event)).await;
             }
-        }
-    }))
-    .keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(20)).text("keep-alive"))
+
+            loop {
+                match rx.recv().await {
+                    Ok(event) => {
+                        yielder.yield_item(Ok(event)).await;
+                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        },
+    ))
+    .keep_alive(
+        KeepAlive::new()
+            .interval(std::time::Duration::from_secs(20))
+            .text("keep-alive"),
+    )
 }
 
 async fn broadcast_patch(ctx: &AppContext, patch: UiPatch) {
@@ -603,7 +632,8 @@ fn counter_signals_json(view: &AppView) -> String {
         "counterImageIndex": if view.total > 0 { view.index } else { 0 },
         "counterImageTotal": view.total,
         "counterQueueCount": view.queue_count,
-        "currentPath": view.current_path_label
+        "currentPath": view.current_path_label,
+        "directorySelectEnabled": view.directory_select_enabled
     })
     .to_string()
 }
@@ -715,7 +745,9 @@ async fn build_view(ctx: &AppContext) -> AppView {
                 crate::domain::DecisionState::Decided { side, action } => {
                     queue_item_from_action(image, action, Some(*side), inner.root_dir.as_ref())
                 }
-                crate::domain::DecisionState::Undecided => queue_item_none(image, inner.root_dir.as_ref()),
+                crate::domain::DecisionState::Undecided => {
+                    queue_item_none(image, inner.root_dir.as_ref())
+                }
             })
             .collect()
     } else {
@@ -856,10 +888,7 @@ fn action_config_label(action: &ActionConfig) -> String {
     }
 }
 
-fn build_stack_cards(
-    inner: &crate::domain::state::AppStateInner,
-    radius: usize,
-) -> Vec<StackCard> {
+fn build_stack_cards(inner: &crate::domain::state::AppStateInner, radius: usize) -> Vec<StackCard> {
     if inner.order.is_empty() {
         return Vec::new();
     }
@@ -958,7 +987,10 @@ fn queue_item_none(image: &ImageEntry, root_dir: Option<&PathBuf>) -> QueueItem 
     }
 }
 
-fn preload_window_paths(inner: &crate::domain::state::AppStateInner, radius: usize) -> Vec<PathBuf> {
+fn preload_window_paths(
+    inner: &crate::domain::state::AppStateInner,
+    radius: usize,
+) -> Vec<PathBuf> {
     if inner.order.is_empty() {
         return Vec::new();
     }
@@ -1008,25 +1040,25 @@ fn modal_layer(stack: &[ModalView], view: ModalView) -> usize {
 }
 
 #[derive(Template)]
-#[template(path = "main.html")]
+#[template(path = "index.html")]
 struct MainTemplate {
     view: AppView,
 }
 
 #[derive(Template)]
-#[template(path = "partials/action_header.html")]
+#[template(path = "partials/header.html")]
 struct ActionHeaderTemplate<'a> {
     view: &'a AppView,
 }
 
 #[derive(Template)]
-#[template(path = "partials/viewer_region.html")]
+#[template(path = "partials/viewer.html")]
 struct ViewerRegionTemplate<'a> {
     view: &'a AppView,
 }
 
 #[derive(Template)]
-#[template(path = "partials/modal_region.html")]
+#[template(path = "partials/modal.html")]
 struct ModalRegionTemplate<'a> {
     view: &'a AppView,
 }

@@ -1,0 +1,34 @@
+<header id="action-header">
+    <section aria-label="Directory">
+        <button
+            id="directory-select"
+            type="button"
+            title="Select directory"
+            data-on:click="window.piclrOpenDirectoryPicker?.()"
+            data-attr="{ disabled: !$directorySelectEnabled, 'aria-disabled': !$directorySelectEnabled }"
+        >
+            📁
+        </button>
+        <button data-on:click="@post('/cmd/show-files')">
+            <span data-text="$counterImageIndex"></span> /
+            <span data-text="$counterImageTotal"></span>
+        </button>
+        <menu-item data-text="$currentPath"></menu-item>
+    </section>
+    <section aria-label="Left action">
+        <header-title>Left</header-title>
+        <action-label>{{ view.left_action_label }}</action-label>
+        <header-counter data-text="$counterLeftAction"></header-counter>
+    </section>
+    <section aria-label="Right action">
+        <header-title>Right</header-title>
+        <action-label>{{ view.right_action_label }}</action-label>
+        <header-counter data-text="$counterRightAction"></header-counter>
+    </section>
+    <section aria-label="Queue">
+        <button data-on:click="@post('/cmd/show-queue')">
+            <span data-text="$counterQueueCount"></span>
+            <button id="apply-button" type="button" title="Apply">▶️</button>
+        </button>
+    </section>
+</header>

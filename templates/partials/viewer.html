@@ -1,17 +1,19 @@
 <div id="viewer-region">
     {% if view.has_images %}
     <main class="viewer">
-        <div class="stack-click-zones" aria-hidden="true">
+        <div class="stack-click-zones">
             <button
                 class="stack-click-zone stack-click-zone-left"
                 type="button"
                 tabindex="-1"
+                aria-label="Assign left action"
                 data-on:click="@post('/cmd/left')"
             ></button>
             <button
                 class="stack-click-zone stack-click-zone-right"
                 type="button"
                 tabindex="-1"
+                aria-label="Assign right action"
                 data-on:click="@post('/cmd/right')"
             ></button>
         </div>

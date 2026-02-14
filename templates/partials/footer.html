@@ -1,0 +1,36 @@
+<footer id="footerbar">
+    <section aria-label="App name">
+        <app-title>piclr</app-title>
+    </section>
+    <section aria-label="Commands">
+        <command-list>
+            <button data-on:click="@post('/cmd/left')">
+                <span class="btn-glyph">←</span>Left
+            </button>
+            <button data-on:click="@post('/cmd/next')">
+                <span class="btn-glyph">↓</span>Next
+            </button>
+            <button data-on:click="@post('/cmd/prev')">
+                <span class="btn-glyph">↑</span>Prev
+            </button>
+            <button data-on:click="@post('/cmd/right')">
+                <span class="btn-glyph">→</span>Right
+            </button>
+            <button data-on:click="@post('/cmd/undo')">
+                <span class="btn-glyph">↶</span>Undo
+            </button>
+            <button data-on:click="@post('/cmd/apply')">
+                <span class="btn-glyph">↩</span>Apply
+            </button>
+            <button
+                data-on:click="window.piclrOpenDirectoryPicker?.()"
+                data-attr="{ disabled: !$directorySelectEnabled, 'aria-disabled': !$directorySelectEnabled }"
+            >
+                Select
+            </button>
+        </command-list>
+    </section>
+    <section aria-label="Settings">
+        <button id="settings-button" type="button" title="Settings">⚙</button>
+    </section>
+</footer>
