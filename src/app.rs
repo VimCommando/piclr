@@ -1,9 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use bytes::Bytes;
-use std::collections::HashMap;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{RwLock, broadcast};
 
 use crate::domain::{
     ActionConfig, ActionMapping, AppStateMachine, SortDirection, SortKey, SortMode,
@@ -44,7 +42,6 @@ impl Default for AppConfig {
 pub struct AppContext {
     pub state: Arc<RwLock<AppStateMachine>>,
     pub config: AppConfig,
-    pub cache: Arc<RwLock<HashMap<PathBuf, Bytes>>>,
     pub rendered_stack_ids: Arc<RwLock<Vec<u64>>>,
     pub sse_tx: broadcast::Sender<axum::response::sse::Event>,
 }
@@ -55,7 +52,6 @@ impl AppContext {
         Self {
             state: Arc::new(RwLock::new(state)),
             config,
-            cache: Arc::new(RwLock::new(HashMap::new())),
             rendered_stack_ids: Arc::new(RwLock::new(Vec::new())),
             sse_tx,
         }

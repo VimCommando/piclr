@@ -4,7 +4,7 @@ use std::time::SystemTime;
 
 use super::actions::{ActionConfig, ActionMapping, DecisionSide, DecisionState};
 use super::preload::PreloadState;
-use super::sorting::{sort_indices, SortMode};
+use super::sorting::{SortMode, sort_indices};
 use super::undo::UndoEntry;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

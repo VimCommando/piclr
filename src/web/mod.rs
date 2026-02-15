@@ -14,8 +14,7 @@ use mime_guess::MimeGuess;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::Arc;
-use tokio::sync::{RwLock, broadcast};
+use tokio::sync::broadcast;
 use tracing::warn;
 
 use crate::app::AppContext;
@@ -289,31 +288,38 @@ async fn apply_queue(ctx: &AppContext) -> ApplySummary {
     };
 
     let config = FsConfig::new(root_dir, destructive);
-    let mut guard = ctx.state.write().await;
-    let images = guard.inner_mut().images.clone();
+    let queued_actions = {
+        let guard = ctx.state.read().await;
+        let inner = guard.inner();
+        inner
+            .order
+            .iter()
+            .filter_map(|idx| inner.images.get(*idx))
+            .filter_map(|image| {
+                image
+                    .queued_action
+                    .as_ref()
+                    .map(|action| (image.path.clone(), action.clone(), image.rename_sequence))
+            })
+            .collect::<Vec<_>>()
+    };
     let mut summary = ApplySummary::default();
-    for image in images {
-        if let Some(action) = image.queued_action {
-            summary.total += 1;
-            if let Err(err) =
-                apply_action(&config, &image.path, &action, image.rename_sequence).await
-            {
-                summary.failed += 1;
-                summary
-                    .errors
-                    .push(format!("{}: {}", image.path.display(), err));
-                warn!(%err, path = %image.path.display(), "Failed to apply queued action");
-            } else {
-                summary.completed += 1;
-            }
+    for (path, action, rename_sequence) in queued_actions {
+        summary.total += 1;
+        if let Err(err) = apply_action(&config, &path, &action, rename_sequence).await {
+            summary.failed += 1;
+            summary.errors.push(format!("{}: {}", path.display(), err));
+            warn!(%err, path = %path.display(), "Failed to apply queued action");
+        } else {
+            summary.completed += 1;
         }
     }
+    let mut guard = ctx.state.write().await;
     guard
         .inner_mut()
         .images
         .iter_mut()
         .for_each(|image| image.queued_action = None);
-    drop(guard);
     summary
 }
 
@@ -539,10 +545,6 @@ async fn image(State(state): State<WebState>, Path(id): Path<u64>) -> Response {
         return StatusCode::NOT_FOUND.into_response();
     };
 
-    if let Some(bytes) = state.ctx.cache.read().await.get(&path).cloned() {
-        return bytes_response(&path, bytes);
-    }
-
     let bytes = match load_image_bytes(&path).await {
         Ok(bytes) => Bytes::from(bytes),
         Err(err) => {
@@ -551,12 +553,6 @@ async fn image(State(state): State<WebState>, Path(id): Path<u64>) -> Response {
         }
     };
 
-    state
-        .ctx
-        .cache
-        .write()
-        .await
-        .insert(path.clone(), bytes.clone());
     bytes_response(&path, bytes)
 }
 
@@ -677,7 +673,12 @@ async fn build_stack_patch_events(
     reset_rendered: bool,
 ) -> Vec<Event> {
     let mut events = Vec::new();
-    let desired_ids: Vec<u64> = view.stack_cards.iter().map(|card| card.image_id).collect();
+    let desired_ids: Vec<u64> = view
+        .image_stack
+        .cards
+        .iter()
+        .map(|card| card.image_id)
+        .collect();
     let desired_set: HashSet<u64> = desired_ids.iter().copied().collect();
 
     let previous_ids = { ctx.rendered_stack_ids.read().await.clone() };
@@ -688,8 +689,8 @@ async fn build_stack_patch_events(
             let remove = PatchElements::new_remove(format!("#image-card-{image_id}"));
             events.push(remove.write_as_axum_sse_event());
         }
-        for card in &view.stack_cards {
-            let html = ImageCardTemplate { card }.render().unwrap_or_default();
+        for card in &view.image_stack.cards {
+            let html = render_image_card(card);
             let patch = PatchElements::new(html)
                 .selector("#image-stack")
                 .mode(ElementPatchMode::Append);
@@ -708,12 +709,13 @@ async fn build_stack_patch_events(
     }
 
     let added_start: Vec<&StackCard> = view
-        .stack_cards
+        .image_stack
+        .cards
         .iter()
         .take_while(|card| !previous_set.contains(&card.image_id))
         .collect();
     for card in added_start.iter().rev() {
-        let html = ImageCardTemplate { card }.render().unwrap_or_default();
+        let html = render_image_card(card);
         let patch = PatchElements::new(html)
             .selector("#image-stack")
             .mode(ElementPatchMode::Prepend);
@@ -721,7 +723,8 @@ async fn build_stack_patch_events(
     }
 
     let added_end: Vec<&StackCard> = view
-        .stack_cards
+        .image_stack
+        .cards
         .iter()
         .rev()
         .take_while(|card| !previous_set.contains(&card.image_id))
@@ -730,7 +733,7 @@ async fn build_stack_patch_events(
         .rev()
         .collect();
     for card in added_end {
-        let html = ImageCardTemplate { card }.render().unwrap_or_default();
+        let html = render_image_card(card);
         let patch = PatchElements::new(html)
             .selector("#image-stack")
             .mode(ElementPatchMode::Append);
@@ -748,13 +751,14 @@ async fn build_stack_patch_events(
 async fn patch_stack_card_if_visible(ctx: &AppContext, image_id: u64) {
     let view = build_view(ctx).await;
     let Some(card) = view
-        .stack_cards
+        .image_stack
+        .cards
         .iter()
         .find(|card| card.image_id == image_id)
     else {
         return;
     };
-    let html = ImageCardTemplate { card }.render().unwrap_or_default();
+    let html = render_image_card(card);
     let patch = PatchElements::new(html)
         .selector(format!("#image-card-{image_id}"))
         .mode(ElementPatchMode::Outer);
@@ -768,7 +772,7 @@ fn counter_signals_json(view: &AppView) -> String {
         "counterImageIndex": if view.total > 0 { view.index } else { 0 },
         "counterImageTotal": view.total,
         "counterQueueCount": view.queue_count,
-        "stackCursor": view.stack_cursor,
+        "stackCursor": view.image_stack.cursor,
         "currentPath": view.current_path_label,
         "directorySelectEnabled": view.directory_select_enabled
     })
@@ -791,11 +795,6 @@ async fn build_view(ctx: &AppContext) -> AppView {
     let total = inner.order.len();
     let index = inner.cursor + 1;
     let current = inner.current();
-    let window_paths = preload_window_paths(inner, 5);
-    let cache = ctx.cache.clone();
-    tokio::spawn(async move {
-        maintain_cache_window(cache, window_paths).await;
-    });
     let mut queue_count = 0usize;
     let mut left_action_count = 0usize;
     let mut right_action_count = 0usize;
@@ -831,8 +830,9 @@ async fn build_view(ctx: &AppContext) -> AppView {
     if show_queue_modal {
         let current_id = current.map(|e| e.id).unwrap_or(0);
         queue_items = inner
-            .images
+            .order
             .iter()
+            .filter_map(|idx| inner.images.get(*idx))
             .filter_map(|image| {
                 let queued = image.queued_action.as_ref()?;
                 if image.id == current_id {
@@ -851,12 +851,18 @@ async fn build_view(ctx: &AppContext) -> AppView {
     let mut queue_insert_at_end = false;
     if show_queue_modal && !queue_items.is_empty() && !queue_has_current {
         if let Some(current_id) = current.map(|entry| entry.id) {
-            let current_pos = inner.images.iter().position(|image| image.id == current_id);
+            let current_pos = inner
+                .order
+                .iter()
+                .position(|idx| inner.images.get(*idx).map(|image| image.id) == Some(current_id));
             if let Some(current_pos) = current_pos {
                 if let Some(before_id) = inner
-                    .images
+                    .order
                     .iter()
                     .enumerate()
+                    .filter_map(|(idx, image_idx)| {
+                        inner.images.get(*image_idx).map(|image| (idx, image))
+                    })
                     .filter(|(_, image)| image.queued_action.is_some())
                     .find(|(idx, _)| *idx > current_pos)
                     .map(|(_, image)| image.id)
@@ -890,11 +896,13 @@ async fn build_view(ctx: &AppContext) -> AppView {
     } else {
         Vec::new()
     };
-    let stack_cards = build_stack_cards(inner, 5);
+    let image_stack = ImageStackProjection {
+        cards: build_stack_cards(inner, 5),
+        cursor: inner.cursor,
+    };
     AppView {
         directory_select_enabled: cfg!(feature = "tauri"),
-        stack_cards,
-        stack_cursor: inner.cursor,
+        image_stack,
         current_image_id: current.map(|entry| entry.id).unwrap_or(0),
         current_path_label,
         left_action_label: action_config_label(&inner.action_mapping.left),
@@ -929,8 +937,7 @@ async fn build_view(ctx: &AppContext) -> AppView {
 #[derive(Clone, Debug)]
 pub struct AppView {
     pub directory_select_enabled: bool,
-    pub stack_cards: Vec<StackCard>,
-    pub stack_cursor: usize,
+    pub image_stack: ImageStackProjection,
     pub current_image_id: u64,
     pub current_path_label: String,
     pub left_action_label: String,
@@ -959,6 +966,12 @@ pub struct AppView {
     pub file_items: Vec<QueueItem>,
     pub queue_insert_before_id: Option<u64>,
     pub queue_insert_at_end: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct ImageStackProjection {
+    pub cards: Vec<StackCard>,
+    pub cursor: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -1102,47 +1115,28 @@ fn queue_item_none(image: &ImageEntry, root_dir: Option<&PathBuf>) -> QueueItem 
     }
 }
 
+#[cfg(test)]
 fn preload_window_paths(
     inner: &crate::domain::state::AppStateInner,
     radius: usize,
-) -> Vec<PathBuf> {
+) -> std::collections::VecDeque<PathBuf> {
     if inner.order.is_empty() {
-        return Vec::new();
+        return std::collections::VecDeque::new();
     }
     let start = inner.cursor.saturating_sub(radius);
     let end = (inner.cursor + radius).min(inner.order.len().saturating_sub(1));
-    (start..=end)
-        .filter_map(|pos| {
-            inner
-                .order
-                .get(pos)
-                .and_then(|idx| inner.images.get(*idx))
-                .map(|entry| entry.path.clone())
-        })
-        .collect()
-}
-
-async fn maintain_cache_window(
-    cache: Arc<RwLock<HashMap<PathBuf, Bytes>>>,
-    desired_paths: Vec<PathBuf>,
-) {
-    let keep: HashSet<PathBuf> = desired_paths.iter().cloned().collect();
-    {
-        let mut guard = cache.write().await;
-        guard.retain(|path, _| keep.contains(path));
-    }
-    for path in desired_paths {
-        let exists = {
-            let guard = cache.read().await;
-            guard.contains_key(&path)
-        };
-        if exists {
-            continue;
-        }
-        if let Ok(bytes) = load_image_bytes(&path).await {
-            cache.write().await.insert(path, Bytes::from(bytes));
+    let mut window = std::collections::VecDeque::new();
+    for pos in start..=end {
+        if let Some(path) = inner
+            .order
+            .get(pos)
+            .and_then(|idx| inner.images.get(*idx))
+            .map(|entry| entry.path.clone())
+        {
+            window.push_back(path);
         }
     }
+    window
 }
 
 fn modal_layer(stack: &[ModalView], view: ModalView) -> usize {
@@ -1180,4 +1174,87 @@ struct ModalTemplate<'a> {
 #[template(path = "partials/image_card.html")]
 struct ImageCardTemplate<'a> {
     card: &'a StackCard,
+}
+
+fn render_image_card(card: &StackCard) -> String {
+    ImageCardTemplate { card }.render().unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::{
+        ActionConfig, ActionMapping, DecisionState, ImageMeta, SortDirection, SortKey, SortMode,
+    };
+    use std::path::PathBuf;
+
+    fn sample_image(id: u64, path: &str, original_order: usize) -> ImageEntry {
+        ImageEntry {
+            id,
+            path: PathBuf::from(path),
+            original_order,
+            decision: DecisionState::Undecided,
+            queued_action: None,
+            rename_sequence: None,
+            meta: ImageMeta {
+                created: None,
+                modified: None,
+                orientation: None,
+            },
+        }
+    }
+
+    fn sample_state() -> crate::domain::state::AppStateInner {
+        let mapping = ActionMapping {
+            left: ActionConfig::Delete,
+            right: ActionConfig::Keep,
+        };
+        let sort_mode = SortMode {
+            key: SortKey::Filesystem,
+            direction: SortDirection::Asc,
+        };
+        let mut inner = crate::domain::state::AppStateInner::new(true, mapping, sort_mode);
+        inner.set_images(
+            vec![
+                sample_image(1, "/tmp/a.jpg", 0),
+                sample_image(2, "/tmp/b.jpg", 1),
+                sample_image(3, "/tmp/c.jpg", 2),
+                sample_image(4, "/tmp/d.jpg", 3),
+                sample_image(5, "/tmp/e.jpg", 4),
+            ],
+            Some(PathBuf::from("/tmp")),
+        );
+        inner
+    }
+
+    #[test]
+    fn preload_window_is_bounded_and_ordered() {
+        let mut inner = sample_state();
+        inner.cursor = 2;
+        let window = preload_window_paths(&inner, 1);
+        let labels: Vec<String> = window
+            .iter()
+            .filter_map(|path| {
+                path.file_name()
+                    .map(|name| name.to_string_lossy().to_string())
+            })
+            .collect();
+        assert_eq!(labels, vec!["b.jpg", "c.jpg", "d.jpg"]);
+    }
+
+    #[test]
+    fn image_card_render_contains_entry_identity_and_alignment() {
+        let mut inner = sample_state();
+        inner.images[1].decision = DecisionState::Decided {
+            side: DecisionSide::Right,
+            action: ActionConfig::Keep,
+        };
+        inner.cursor = 1;
+        let cards = build_stack_cards(&inner, 1);
+        let card = cards.iter().find(|card| card.image_id == 2).unwrap();
+        let html = render_image_card(card);
+        assert!(html.contains("id=\"image-card-2\""));
+        assert!(html.contains("class=\"align-right\""));
+        assert!(html.contains("src=\"/image/2\""));
+    }
 }
