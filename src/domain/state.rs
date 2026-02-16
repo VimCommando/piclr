@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::time::SystemTime;
@@ -40,6 +41,8 @@ pub struct AppStateInner {
     pub images: Vec<ImageEntry>,
     pub order: Vec<usize>,
     pub cursor: usize,
+    pub queued_ids: VecDeque<u64>,
+    pub scan_version: u64,
     pub queue_mode: bool,
     pub action_mapping: ActionMapping,
     pub sort_mode: SortMode,
@@ -47,7 +50,8 @@ pub struct AppStateInner {
     pub preload: PreloadState,
     pub rename_counter: u64,
     pub root_dir: Option<PathBuf>,
-    pub view_stack: Vec<ModalView>,
+    pub active_modal: Option<ModalView>,
+    pub projection: ReadModelProjection,
     pub last_apply_result: Option<ApplyResultSummary>,
     pub nav_direction: Option<NavDirection>,
     pub nav_tick: u64,
@@ -59,6 +63,15 @@ pub struct ApplyResultSummary {
     pub total: usize,
     pub failed: usize,
     pub errors: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ReadModelProjection {
+    pub left_action_count: usize,
+    pub right_action_count: usize,
+    pub queue_count: usize,
+    pub stack_start: usize,
+    pub stack_end: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -82,6 +95,8 @@ impl AppStateInner {
             images: Vec::new(),
             order: Vec::new(),
             cursor: 0,
+            queued_ids: VecDeque::new(),
+            scan_version: 0,
             queue_mode,
             action_mapping,
             sort_mode,
@@ -89,7 +104,8 @@ impl AppStateInner {
             preload: PreloadState::default(),
             rename_counter: 1,
             root_dir: None,
-            view_stack: Vec::new(),
+            active_modal: None,
+            projection: ReadModelProjection::default(),
             last_apply_result: None,
             nav_direction: None,
             nav_tick: 0,
@@ -98,9 +114,12 @@ impl AppStateInner {
 
     pub fn set_images(&mut self, images: Vec<ImageEntry>, root_dir: Option<PathBuf>) {
         self.images = images;
+        self.scan_version = self.scan_version.saturating_add(1);
         self.order = sort_indices(&self.images, self.sort_mode);
         self.cursor = 0;
         self.root_dir = root_dir;
+        self.rebuild_queue_from_order();
+        self.rebuild_projection();
         self.update_preload();
     }
 
@@ -126,6 +145,8 @@ impl AppStateInner {
                 self.cursor = position;
             }
         }
+        self.rebuild_queue_from_order();
+        self.update_stack_projection(5);
         self.update_preload();
     }
 
@@ -133,6 +154,7 @@ impl AppStateInner {
         if self.cursor + 1 < self.order.len() {
             self.cursor += 1;
             self.record_nav(NavDirection::Down);
+            self.update_stack_projection(5);
             self.update_preload();
         }
     }
@@ -141,6 +163,7 @@ impl AppStateInner {
         if self.cursor > 0 {
             self.cursor -= 1;
             self.record_nav(NavDirection::Up);
+            self.update_stack_projection(5);
             self.update_preload();
         }
     }
@@ -159,6 +182,7 @@ impl AppStateInner {
         {
             self.cursor = start + offset;
             self.record_nav(NavDirection::Down);
+            self.update_stack_projection(5);
             self.update_preload();
         }
     }
@@ -176,6 +200,7 @@ impl AppStateInner {
         {
             self.cursor = position;
             self.record_nav(NavDirection::Up);
+            self.update_stack_projection(5);
             self.update_preload();
         }
     }
@@ -197,6 +222,7 @@ impl AppStateInner {
             if let Some(direction) = direction {
                 self.record_nav(direction);
             }
+            self.update_stack_projection(5);
             self.update_preload();
             return true;
         }
@@ -248,10 +274,12 @@ impl AppStateInner {
             self.rename_counter += 1;
         }
 
+        self.rebuild_queue_from_order();
+        self.rebuild_projection_counters();
         self.next();
         let cursor_after = self.cursor;
 
-        Some(DecisionOutcome {
+        let outcome = DecisionOutcome {
             image_id,
             action,
             previous_decision,
@@ -259,7 +287,8 @@ impl AppStateInner {
             cursor_before,
             cursor_after,
             immediate: !queue_mode,
-        })
+        };
+        Some(outcome)
     }
 
     pub fn reset_queue_state(&mut self) {
@@ -268,8 +297,10 @@ impl AppStateInner {
             image.queued_action = None;
             image.rename_sequence = None;
         }
+        self.queued_ids.clear();
         self.undo_stack.clear();
         self.rename_counter = 1;
+        self.rebuild_projection();
         self.update_preload();
     }
 
@@ -288,6 +319,8 @@ impl AppStateInner {
                 image.queued_action = undo.previous_queue.clone();
             }
             self.cursor = undo.previous_cursor;
+            self.rebuild_queue_from_order();
+            self.rebuild_projection();
             self.update_preload();
             return Some(undo);
         }
@@ -295,20 +328,44 @@ impl AppStateInner {
     }
 
     pub fn show_view(&mut self, view: ModalView) {
-        self.view_stack.retain(|existing| *existing != view);
-        self.view_stack.push(view);
+        self.active_modal = Some(view);
     }
 
     pub fn close_view(&mut self) -> Option<ModalView> {
-        self.view_stack.pop()
+        self.active_modal.take()
     }
 
     pub fn hide_view(&mut self, view: ModalView) {
-        self.view_stack.retain(|existing| *existing != view);
+        if self.active_modal == Some(view) {
+            self.active_modal = None;
+        }
     }
 
     pub fn has_view(&self, view: ModalView) -> bool {
-        self.view_stack.contains(&view)
+        self.active_modal == Some(view)
+    }
+
+    pub fn queued_actions_for_apply(&self) -> Vec<(PathBuf, ActionConfig, Option<u64>)> {
+        self.queued_ids
+            .iter()
+            .filter_map(|queued_id| {
+                let image = self.images.iter().find(|image| image.id == *queued_id)?;
+                let action = image.queued_action.clone()?;
+                Some((image.path.clone(), action, image.rename_sequence))
+            })
+            .collect()
+    }
+
+    pub fn clear_queued_actions(&mut self) {
+        for image in &mut self.images {
+            image.queued_action = None;
+        }
+        self.queued_ids.clear();
+        self.rebuild_projection_counters();
+    }
+
+    pub fn projection(&self) -> &ReadModelProjection {
+        &self.projection
     }
 
     fn update_preload(&mut self) {
@@ -316,6 +373,53 @@ impl AppStateInner {
         self.preload.next_path =
             next_index.and_then(|idx| self.images.get(idx).map(|e| e.path.clone()));
     }
+
+    fn rebuild_queue_from_order(&mut self) {
+        self.queued_ids.clear();
+        for idx in &self.order {
+            if let Some(image) = self.images.get(*idx) {
+                if image.queued_action.is_some() {
+                    self.queued_ids.push_back(image.id);
+                }
+            }
+        }
+    }
+
+    fn update_stack_projection(&mut self, radius: usize) {
+        if self.order.is_empty() {
+            self.projection.stack_start = 0;
+            self.projection.stack_end = 0;
+            return;
+        }
+        self.projection.stack_start = self.cursor.saturating_sub(radius);
+        self.projection.stack_end =
+            (self.cursor + radius).min(self.order.len().saturating_sub(1));
+    }
+
+    fn rebuild_projection_counters(&mut self) {
+        self.projection.left_action_count = 0;
+        self.projection.right_action_count = 0;
+        for image in &self.images {
+            match &image.decision {
+                DecisionState::Decided {
+                    side: DecisionSide::Left,
+                    ..
+                } => self.projection.left_action_count += 1,
+                DecisionState::Decided {
+                    side: DecisionSide::Right,
+                    ..
+                } => self.projection.right_action_count += 1,
+                DecisionState::Undecided => {}
+            }
+        }
+        self.projection.queue_count = self.queued_ids.len();
+    }
+
+    fn rebuild_projection(&mut self) {
+        self.rebuild_projection_counters();
+        self.update_stack_projection(5);
+    }
+
 }
 
 #[derive(Clone, Debug)]
@@ -343,72 +447,72 @@ pub struct Applying;
 pub struct Done;
 
 #[derive(Clone, Debug)]
-pub struct AppState<S> {
-    pub inner: AppStateInner,
+pub struct App<S> {
+    pub state: AppStateInner,
     marker: PhantomData<S>,
 }
 
-impl AppState<Init> {
+impl App<Init> {
     pub fn new(queue_mode: bool, action_mapping: ActionMapping, sort_mode: SortMode) -> Self {
         Self {
-            inner: AppStateInner::new(queue_mode, action_mapping, sort_mode),
+            state: AppStateInner::new(queue_mode, action_mapping, sort_mode),
             marker: PhantomData,
         }
     }
 
-    pub fn start_scan(self) -> AppState<Scanning> {
-        AppState {
-            inner: self.inner,
+    pub fn start_scan(self) -> App<Scanning> {
+        App {
+            state: self.state,
             marker: PhantomData,
         }
     }
 }
 
-impl AppState<Scanning> {
+impl App<Scanning> {
     pub fn with_images(
         mut self,
         images: Vec<ImageEntry>,
         root_dir: Option<PathBuf>,
-    ) -> AppState<Ready> {
-        self.inner.set_images(images, root_dir);
-        AppState {
-            inner: self.inner,
+    ) -> App<Ready> {
+        self.state.set_images(images, root_dir);
+        App {
+            state: self.state,
             marker: PhantomData,
         }
     }
 }
 
-impl AppState<Ready> {
-    pub fn start_viewing(self) -> AppState<Viewing> {
-        AppState {
-            inner: self.inner,
+impl App<Ready> {
+    pub fn start_viewing(self) -> App<Viewing> {
+        App {
+            state: self.state,
             marker: PhantomData,
         }
     }
 }
 
-impl AppState<Viewing> {
-    pub fn start_applying(self) -> AppState<Applying> {
-        AppState {
-            inner: self.inner,
+impl App<Viewing> {
+    pub fn start_applying(self) -> App<Applying> {
+        App {
+            state: self.state,
             marker: PhantomData,
         }
     }
 }
 
-impl AppState<Applying> {
-    pub fn finish(self) -> AppState<Done> {
-        AppState {
-            inner: self.inner,
+impl App<Applying> {
+    pub fn finish(self) -> App<Done> {
+        App {
+            state: self.state,
             marker: PhantomData,
         }
     }
 }
 
-impl AppState<Done> {
-    pub fn restart(self) -> AppState<Init> {
-        AppState {
-            inner: self.inner,
+impl App<Done> {
+    pub fn restart(self) -> App<Init> {
+        App {
+            state: self.state,
             marker: PhantomData,
         }
     }
@@ -416,17 +520,17 @@ impl AppState<Done> {
 
 #[derive(Clone, Debug)]
 pub enum AppStateMachine {
-    Init(AppState<Init>),
-    Scanning(AppState<Scanning>),
-    Ready(AppState<Ready>),
-    Viewing(AppState<Viewing>),
-    Applying(AppState<Applying>),
-    Done(AppState<Done>),
+    Init(App<Init>),
+    Scanning(App<Scanning>),
+    Ready(App<Ready>),
+    Viewing(App<Viewing>),
+    Applying(App<Applying>),
+    Done(App<Done>),
 }
 
 impl AppStateMachine {
     pub fn new(queue_mode: bool, action_mapping: ActionMapping, sort_mode: SortMode) -> Self {
-        AppStateMachine::Init(AppState::new(queue_mode, action_mapping, sort_mode))
+        AppStateMachine::Init(App::new(queue_mode, action_mapping, sort_mode))
     }
 
     pub fn mode(&self) -> AppMode {
@@ -440,25 +544,25 @@ impl AppStateMachine {
         }
     }
 
-    pub fn inner(&self) -> &AppStateInner {
+    pub fn state(&self) -> &AppStateInner {
         match self {
-            AppStateMachine::Init(state) => &state.inner,
-            AppStateMachine::Scanning(state) => &state.inner,
-            AppStateMachine::Ready(state) => &state.inner,
-            AppStateMachine::Viewing(state) => &state.inner,
-            AppStateMachine::Applying(state) => &state.inner,
-            AppStateMachine::Done(state) => &state.inner,
+            AppStateMachine::Init(state) => &state.state,
+            AppStateMachine::Scanning(state) => &state.state,
+            AppStateMachine::Ready(state) => &state.state,
+            AppStateMachine::Viewing(state) => &state.state,
+            AppStateMachine::Applying(state) => &state.state,
+            AppStateMachine::Done(state) => &state.state,
         }
     }
 
-    pub fn inner_mut(&mut self) -> &mut AppStateInner {
+    pub fn state_mut(&mut self) -> &mut AppStateInner {
         match self {
-            AppStateMachine::Init(state) => &mut state.inner,
-            AppStateMachine::Scanning(state) => &mut state.inner,
-            AppStateMachine::Ready(state) => &mut state.inner,
-            AppStateMachine::Viewing(state) => &mut state.inner,
-            AppStateMachine::Applying(state) => &mut state.inner,
-            AppStateMachine::Done(state) => &mut state.inner,
+            AppStateMachine::Init(state) => &mut state.state,
+            AppStateMachine::Scanning(state) => &mut state.state,
+            AppStateMachine::Ready(state) => &mut state.state,
+            AppStateMachine::Viewing(state) => &mut state.state,
+            AppStateMachine::Applying(state) => &mut state.state,
+            AppStateMachine::Done(state) => &mut state.state,
         }
     }
 

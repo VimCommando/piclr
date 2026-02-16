@@ -132,7 +132,7 @@ async fn cmd_right(State(state): State<WebState>) -> impl IntoResponse {
 
 async fn cmd_next(State(state): State<WebState>) -> impl IntoResponse {
     let mut guard = state.ctx.state.write().await;
-    guard.inner_mut().next();
+    guard.state_mut().next();
     drop(guard);
     let ctx = state.ctx.clone();
     broadcast_patch(&ctx, navigation_patch(&ctx).await).await;
@@ -141,7 +141,7 @@ async fn cmd_next(State(state): State<WebState>) -> impl IntoResponse {
 
 async fn cmd_prev(State(state): State<WebState>) -> impl IntoResponse {
     let mut guard = state.ctx.state.write().await;
-    guard.inner_mut().prev();
+    guard.state_mut().prev();
     drop(guard);
     let ctx = state.ctx.clone();
     broadcast_patch(&ctx, navigation_patch(&ctx).await).await;
@@ -150,7 +150,7 @@ async fn cmd_prev(State(state): State<WebState>) -> impl IntoResponse {
 
 async fn cmd_jump_next(State(state): State<WebState>) -> impl IntoResponse {
     let mut guard = state.ctx.state.write().await;
-    guard.inner_mut().jump_next_undecided();
+    guard.state_mut().jump_next_undecided();
     drop(guard);
     let ctx = state.ctx.clone();
     broadcast_patch(&ctx, navigation_patch(&ctx).await).await;
@@ -159,7 +159,7 @@ async fn cmd_jump_next(State(state): State<WebState>) -> impl IntoResponse {
 
 async fn cmd_jump_prev(State(state): State<WebState>) -> impl IntoResponse {
     let mut guard = state.ctx.state.write().await;
-    guard.inner_mut().jump_prev_undecided();
+    guard.state_mut().jump_prev_undecided();
     drop(guard);
     let ctx = state.ctx.clone();
     broadcast_patch(&ctx, navigation_patch(&ctx).await).await;
@@ -170,7 +170,7 @@ async fn cmd_undo(State(state): State<WebState>) -> impl IntoResponse {
     let (undo_action, undone_image_id) = {
         let mut guard = state.ctx.state.write().await;
         let undone = guard
-            .inner_mut()
+            .state_mut()
             .undo_last()
             .map(|entry| (entry.undo_action, entry.image_id));
         undone.unwrap_or((None, 0))
@@ -193,13 +193,13 @@ async fn cmd_undo(State(state): State<WebState>) -> impl IntoResponse {
 async fn cmd_apply(State(state): State<WebState>) -> impl IntoResponse {
     {
         let mut guard = state.ctx.state.write().await;
-        guard.inner_mut().hide_view(ModalView::Queue);
+        guard.state_mut().hide_view(ModalView::Queue);
     }
 
     let needs_confirm = {
         let guard = state.ctx.state.read().await;
         let has_delete = guard
-            .inner()
+            .state()
             .images
             .iter()
             .any(|image| matches!(image.queued_action, Some(ActionConfig::Delete)));
@@ -208,7 +208,7 @@ async fn cmd_apply(State(state): State<WebState>) -> impl IntoResponse {
 
     if needs_confirm {
         let mut guard = state.ctx.state.write().await;
-        guard.inner_mut().show_view(ModalView::DeleteConfirm);
+        guard.state_mut().show_view(ModalView::DeleteConfirm);
         drop(guard);
         let ctx = state.ctx.clone();
         broadcast_patch(&ctx, UiPatch::MODALS_ONLY).await;
@@ -219,14 +219,14 @@ async fn cmd_apply(State(state): State<WebState>) -> impl IntoResponse {
     refresh_images_after_apply(&state.ctx).await;
     {
         let mut guard = state.ctx.state.write().await;
-        let inner = guard.inner_mut();
-        inner.last_apply_result = Some(crate::domain::state::ApplyResultSummary {
+        let state = guard.state_mut();
+        state.last_apply_result = Some(crate::domain::state::ApplyResultSummary {
             completed: summary.completed,
             total: summary.total,
             failed: summary.failed,
             errors: summary.errors,
         });
-        inner.show_view(ModalView::ApplyResult);
+        state.show_view(ModalView::ApplyResult);
     }
     let ctx = state.ctx.clone();
     broadcast_patch(&ctx, UiPatch::VIEWER_MODALS_AND_SIGNALS).await;
@@ -236,21 +236,21 @@ async fn cmd_apply(State(state): State<WebState>) -> impl IntoResponse {
 async fn cmd_apply_confirm(State(state): State<WebState>) -> impl IntoResponse {
     {
         let mut guard = state.ctx.state.write().await;
-        guard.inner_mut().hide_view(ModalView::DeleteConfirm);
-        guard.inner_mut().hide_view(ModalView::Queue);
+        guard.state_mut().hide_view(ModalView::DeleteConfirm);
+        guard.state_mut().hide_view(ModalView::Queue);
     }
     let summary = apply_queue(&state.ctx).await;
     refresh_images_after_apply(&state.ctx).await;
     {
         let mut guard = state.ctx.state.write().await;
-        let inner = guard.inner_mut();
-        inner.last_apply_result = Some(crate::domain::state::ApplyResultSummary {
+        let state = guard.state_mut();
+        state.last_apply_result = Some(crate::domain::state::ApplyResultSummary {
             completed: summary.completed,
             total: summary.total,
             failed: summary.failed,
             errors: summary.errors,
         });
-        inner.show_view(ModalView::ApplyResult);
+        state.show_view(ModalView::ApplyResult);
     }
     let ctx = state.ctx.clone();
     broadcast_patch(&ctx, UiPatch::VIEWER_MODALS_AND_SIGNALS).await;
@@ -259,7 +259,7 @@ async fn cmd_apply_confirm(State(state): State<WebState>) -> impl IntoResponse {
 
 async fn cmd_reset_queue(State(state): State<WebState>) -> impl IntoResponse {
     let mut guard = state.ctx.state.write().await;
-    guard.inner_mut().reset_queue_state();
+    guard.state_mut().reset_queue_state();
     drop(guard);
     let ctx = state.ctx.clone();
     broadcast_patch(&ctx, UiPatch::RESET_QUEUE).await;
@@ -278,7 +278,7 @@ async fn apply_queue(ctx: &AppContext) -> ApplySummary {
     let (root_dir, destructive) = {
         let guard = ctx.state.read().await;
         (
-            guard.inner().root_dir.clone(),
+            guard.state().root_dir.clone(),
             ctx.config.destructive_delete,
         )
     };
@@ -290,18 +290,7 @@ async fn apply_queue(ctx: &AppContext) -> ApplySummary {
     let config = FsConfig::new(root_dir, destructive);
     let queued_actions = {
         let guard = ctx.state.read().await;
-        let inner = guard.inner();
-        inner
-            .order
-            .iter()
-            .filter_map(|idx| inner.images.get(*idx))
-            .filter_map(|image| {
-                image
-                    .queued_action
-                    .as_ref()
-                    .map(|action| (image.path.clone(), action.clone(), image.rename_sequence))
-            })
-            .collect::<Vec<_>>()
+        guard.state().queued_actions_for_apply()
     };
     let mut summary = ApplySummary::default();
     for (path, action, rename_sequence) in queued_actions {
@@ -315,18 +304,14 @@ async fn apply_queue(ctx: &AppContext) -> ApplySummary {
         }
     }
     let mut guard = ctx.state.write().await;
-    guard
-        .inner_mut()
-        .images
-        .iter_mut()
-        .for_each(|image| image.queued_action = None);
+    guard.state_mut().clear_queued_actions();
     summary
 }
 
 async fn refresh_images_after_apply(ctx: &AppContext) {
     let root_dir = {
         let guard = ctx.state.read().await;
-        guard.inner().root_dir.clone()
+        guard.state().root_dir.clone()
     };
     if let Some(path) = root_dir {
         run_scan(ctx, path).await;
@@ -362,7 +347,7 @@ async fn cmd_update_directory(
     run_scan(&state.ctx, path).await;
     {
         let mut guard = state.ctx.state.write().await;
-        guard.inner_mut().view_stack.clear();
+        guard.state_mut().active_modal = None;
     }
     let ctx = state.ctx.clone();
     broadcast_patch(&ctx, UiPatch::VIEWER_MODALS_AND_SIGNALS).await;
@@ -371,11 +356,11 @@ async fn cmd_update_directory(
 
 async fn cmd_show_queue(State(state): State<WebState>) -> impl IntoResponse {
     let mut guard = state.ctx.state.write().await;
-    let inner = guard.inner_mut();
-    if inner.view_stack.last().copied() == Some(ModalView::Queue) {
-        inner.close_view();
+    let app_state = guard.state_mut();
+    if app_state.active_modal == Some(ModalView::Queue) {
+        app_state.close_view();
     } else {
-        inner.show_view(ModalView::Queue);
+        app_state.show_view(ModalView::Queue);
     }
     drop(guard);
     let ctx = state.ctx.clone();
@@ -385,11 +370,11 @@ async fn cmd_show_queue(State(state): State<WebState>) -> impl IntoResponse {
 
 async fn cmd_show_files(State(state): State<WebState>) -> impl IntoResponse {
     let mut guard = state.ctx.state.write().await;
-    let inner = guard.inner_mut();
-    if inner.view_stack.last().copied() == Some(ModalView::Files) {
-        inner.close_view();
+    let app_state = guard.state_mut();
+    if app_state.active_modal == Some(ModalView::Files) {
+        app_state.close_view();
     } else {
-        inner.show_view(ModalView::Files);
+        app_state.show_view(ModalView::Files);
     }
     drop(guard);
     let ctx = state.ctx.clone();
@@ -399,11 +384,11 @@ async fn cmd_show_files(State(state): State<WebState>) -> impl IntoResponse {
 
 async fn cmd_help(State(state): State<WebState>) -> impl IntoResponse {
     let mut guard = state.ctx.state.write().await;
-    let inner = guard.inner_mut();
-    if inner.view_stack.last().copied() == Some(ModalView::Help) {
-        inner.close_view();
+    let app_state = guard.state_mut();
+    if app_state.active_modal == Some(ModalView::Help) {
+        app_state.close_view();
     } else {
-        inner.show_view(ModalView::Help);
+        app_state.show_view(ModalView::Help);
     }
     drop(guard);
     let ctx = state.ctx.clone();
@@ -413,10 +398,10 @@ async fn cmd_help(State(state): State<WebState>) -> impl IntoResponse {
 
 async fn cmd_select(State(state): State<WebState>, Path(id): Path<u64>) -> impl IntoResponse {
     let mut guard = state.ctx.state.write().await;
-    let selected = guard.inner_mut().select_image_by_id(id);
+    let selected = guard.state_mut().select_image_by_id(id);
     if selected {
-        guard.inner_mut().hide_view(ModalView::Queue);
-        guard.inner_mut().hide_view(ModalView::Files);
+        guard.state_mut().hide_view(ModalView::Queue);
+        guard.state_mut().hide_view(ModalView::Files);
     }
     drop(guard);
     let ctx = state.ctx.clone();
@@ -430,7 +415,7 @@ async fn cmd_select(State(state): State<WebState>, Path(id): Path<u64>) -> impl 
 
 async fn cmd_close(State(state): State<WebState>) -> impl IntoResponse {
     let mut guard = state.ctx.state.write().await;
-    guard.inner_mut().close_view();
+    guard.state_mut().close_view();
     drop(guard);
     let ctx = state.ctx.clone();
     broadcast_patch(&ctx, UiPatch::MODALS_ONLY).await;
@@ -441,13 +426,13 @@ async fn apply_decision(ctx: AppContext, side: DecisionSide) {
     let (root_dir, destructive) = {
         let guard = ctx.state.read().await;
         (
-            guard.inner().root_dir.clone(),
+            guard.state().root_dir.clone(),
             ctx.config.destructive_delete,
         )
     };
 
     let mut guard = ctx.state.write().await;
-    let outcome = guard.inner_mut().apply_decision(side);
+    let outcome = guard.state_mut().apply_decision(side);
     let immediate = outcome.as_ref().map(|o| o.immediate).unwrap_or(false);
     let changed_image_id = outcome.as_ref().map(|o| o.image_id);
     let mut undo_entry = outcome
@@ -466,7 +451,7 @@ async fn apply_decision(ctx: AppContext, side: DecisionSide) {
         {
             let config = FsConfig::new(root_dir, destructive);
             let image = guard
-                .inner()
+                .state()
                 .images
                 .iter()
                 .find(|image| image.id == outcome.image_id)
@@ -492,7 +477,7 @@ async fn apply_decision(ctx: AppContext, side: DecisionSide) {
     }
 
     if let Some(undo) = undo_entry {
-        guard.inner_mut().record_undo(undo);
+        guard.state_mut().record_undo(undo);
     }
 
     drop(guard);
@@ -507,19 +492,40 @@ async fn apply_decision(ctx: AppContext, side: DecisionSide) {
 async fn run_scan(ctx: &AppContext, path: PathBuf) {
     let mut images = scan_images(&path).await;
 
-    let existing_ids_by_path = {
+    let (existing_ids_by_path, existing_state_by_id) = {
         let state = ctx.state.read().await;
-        state
-            .inner()
+        let ids = state
+            .state()
             .images
             .iter()
             .map(|image| (image.path.clone(), image.id))
-            .collect::<HashMap<PathBuf, u64>>()
+            .collect::<HashMap<PathBuf, u64>>();
+        let existing = state
+            .state()
+            .images
+            .iter()
+            .map(|image| {
+                (
+                    image.id,
+                    (
+                        image.decision.clone(),
+                        image.queued_action.clone(),
+                        image.rename_sequence,
+                    ),
+                )
+            })
+            .collect::<HashMap<u64, (crate::domain::DecisionState, Option<ActionConfig>, Option<u64>)>>();
+        (ids, existing)
     };
     let mut next_id = existing_ids_by_path.values().copied().max().unwrap_or(0) + 1;
     for image in &mut images {
         if let Some(existing_id) = existing_ids_by_path.get(&image.path).copied() {
             image.id = existing_id;
+            if let Some((decision, queued_action, rename_sequence)) = existing_state_by_id.get(&existing_id) {
+                image.decision = decision.clone();
+                image.queued_action = queued_action.clone();
+                image.rename_sequence = *rename_sequence;
+            }
         } else {
             image.id = next_id;
             next_id += 1;
@@ -527,14 +533,14 @@ async fn run_scan(ctx: &AppContext, path: PathBuf) {
     }
 
     let mut state = ctx.state.write().await;
-    state.inner_mut().set_images(images, Some(path));
+    state.state_mut().set_images(images, Some(path));
 }
 
 async fn image(State(state): State<WebState>, Path(id): Path<u64>) -> Response {
     let image_path = {
         let guard = state.ctx.state.read().await;
         guard
-            .inner()
+            .state()
             .images
             .iter()
             .find(|image| image.id == id)
@@ -781,8 +787,8 @@ fn counter_signals_json(view: &AppView) -> String {
 
 async fn navigation_patch(ctx: &AppContext) -> UiPatch {
     let guard = ctx.state.read().await;
-    let inner = guard.inner();
-    if inner.has_view(ModalView::Queue) || inner.has_view(ModalView::Files) {
+    let state = guard.state();
+    if state.has_view(ModalView::Queue) || state.has_view(ModalView::Files) {
         UiPatch::VIEWER_MODALS_AND_SIGNALS
     } else {
         UiPatch::VIEWER_AND_SIGNALS
@@ -791,36 +797,24 @@ async fn navigation_patch(ctx: &AppContext) -> UiPatch {
 
 async fn build_view(ctx: &AppContext) -> AppView {
     let guard = ctx.state.read().await;
-    let inner = guard.inner();
-    let total = inner.order.len();
-    let index = inner.cursor + 1;
-    let current = inner.current();
-    let mut queue_count = 0usize;
-    let mut left_action_count = 0usize;
-    let mut right_action_count = 0usize;
-    for image in &inner.images {
-        if image.queued_action.is_some() {
-            queue_count += 1;
-        }
-        match decision_side(image) {
-            Some(DecisionSide::Left) => left_action_count += 1,
-            Some(DecisionSide::Right) => right_action_count += 1,
-            None => {}
-        }
-    }
-    let file_count = inner.images.len();
-    let show_queue_modal = inner.has_view(ModalView::Queue);
-    let show_files_modal = inner.has_view(ModalView::Files);
-    let show_help_modal = inner.has_view(ModalView::Help);
-    let show_apply_result = inner.has_view(ModalView::ApplyResult);
-    let show_delete_confirm = inner.has_view(ModalView::DeleteConfirm);
-    let queue_modal_z = modal_layer(&inner.view_stack, ModalView::Queue);
-    let files_modal_z = modal_layer(&inner.view_stack, ModalView::Files);
-    let help_modal_z = modal_layer(&inner.view_stack, ModalView::Help);
-    let apply_result_z = modal_layer(&inner.view_stack, ModalView::ApplyResult);
-    let delete_modal_z = modal_layer(&inner.view_stack, ModalView::DeleteConfirm);
-    let last_apply_result = inner.last_apply_result.clone();
-    let current_path_label = inner
+    let state = guard.state();
+    let projection = state.projection();
+    let total = state.order.len();
+    let index = state.cursor + 1;
+    let current = state.current();
+    let file_count = state.images.len();
+    let show_queue_modal = state.has_view(ModalView::Queue);
+    let show_files_modal = state.has_view(ModalView::Files);
+    let show_help_modal = state.has_view(ModalView::Help);
+    let show_apply_result = state.has_view(ModalView::ApplyResult);
+    let show_delete_confirm = state.has_view(ModalView::DeleteConfirm);
+    let queue_modal_z = modal_layer(state.active_modal, ModalView::Queue);
+    let files_modal_z = modal_layer(state.active_modal, ModalView::Files);
+    let help_modal_z = modal_layer(state.active_modal, ModalView::Help);
+    let apply_result_z = modal_layer(state.active_modal, ModalView::ApplyResult);
+    let delete_modal_z = modal_layer(state.active_modal, ModalView::DeleteConfirm);
+    let last_apply_result = state.last_apply_result.clone();
+    let current_path_label = state
         .root_dir
         .as_ref()
         .map(|path| path.display().to_string())
@@ -829,10 +823,10 @@ async fn build_view(ctx: &AppContext) -> AppView {
     let mut queue_has_current = false;
     if show_queue_modal {
         let current_id = current.map(|e| e.id).unwrap_or(0);
-        queue_items = inner
-            .order
+        queue_items = state
+            .queued_ids
             .iter()
-            .filter_map(|idx| inner.images.get(*idx))
+            .filter_map(|queued_id| state.images.iter().find(|image| image.id == *queued_id))
             .filter_map(|image| {
                 let queued = image.queued_action.as_ref()?;
                 if image.id == current_id {
@@ -842,7 +836,7 @@ async fn build_view(ctx: &AppContext) -> AppView {
                     image,
                     queued,
                     decision_side(image),
-                    inner.root_dir.as_ref(),
+                    state.root_dir.as_ref(),
                 ))
             })
             .collect();
@@ -851,23 +845,36 @@ async fn build_view(ctx: &AppContext) -> AppView {
     let mut queue_insert_at_end = false;
     if show_queue_modal && !queue_items.is_empty() && !queue_has_current {
         if let Some(current_id) = current.map(|entry| entry.id) {
-            let current_pos = inner
+            let current_pos = state
                 .order
                 .iter()
-                .position(|idx| inner.images.get(*idx).map(|image| image.id) == Some(current_id));
+                .position(|idx| state.images.get(*idx).map(|image| image.id) == Some(current_id));
             if let Some(current_pos) = current_pos {
-                if let Some(before_id) = inner
-                    .order
+                let order_position_by_id = state
+                    .queued_ids
                     .iter()
-                    .enumerate()
-                    .filter_map(|(idx, image_idx)| {
-                        inner.images.get(*image_idx).map(|image| (idx, image))
+                    .filter_map(|queued_id| {
+                        state
+                            .images
+                            .iter()
+                            .find(|image| image.id == *queued_id)
+                            .and_then(|image| {
+                                state
+                                    .order
+                                    .iter()
+                                    .position(|idx| {
+                                        state.images.get(*idx).map(|candidate| candidate.id)
+                                            == Some(image.id)
+                                    })
+                                    .map(|order_pos| (image.id, order_pos))
+                            })
                     })
-                    .filter(|(_, image)| image.queued_action.is_some())
-                    .find(|(idx, _)| *idx > current_pos)
-                    .map(|(_, image)| image.id)
+                    .collect::<Vec<_>>();
+                if let Some((before_id, _)) = order_position_by_id
+                    .iter()
+                    .find(|(_, order_pos)| *order_pos > current_pos)
                 {
-                    queue_insert_before_id = Some(before_id);
+                    queue_insert_before_id = Some(*before_id);
                 } else {
                     queue_insert_at_end = true;
                 }
@@ -881,15 +888,15 @@ async fn build_view(ctx: &AppContext) -> AppView {
             .for_each(|item| item.is_insert_before = true);
     }
     let file_items = if show_files_modal {
-        inner
+        state
             .images
             .iter()
             .map(|image| match &image.decision {
                 crate::domain::DecisionState::Decided { side, action } => {
-                    queue_item_from_action(image, action, Some(*side), inner.root_dir.as_ref())
+                    queue_item_from_action(image, action, Some(*side), state.root_dir.as_ref())
                 }
                 crate::domain::DecisionState::Undecided => {
-                    queue_item_none(image, inner.root_dir.as_ref())
+                    queue_item_none(image, state.root_dir.as_ref())
                 }
             })
             .collect()
@@ -897,21 +904,21 @@ async fn build_view(ctx: &AppContext) -> AppView {
         Vec::new()
     };
     let image_stack = ImageStackProjection {
-        cards: build_stack_cards(inner, 5),
-        cursor: inner.cursor,
+        cards: build_stack_cards_in_range(state, projection.stack_start, projection.stack_end),
+        cursor: state.cursor,
     };
     AppView {
         directory_select_enabled: cfg!(feature = "tauri"),
         image_stack,
         current_image_id: current.map(|entry| entry.id).unwrap_or(0),
         current_path_label,
-        left_action_label: action_config_label(&inner.action_mapping.left),
-        right_action_label: action_config_label(&inner.action_mapping.right),
-        left_action_count,
-        right_action_count,
+        left_action_label: action_config_label(&state.action_mapping.left),
+        right_action_label: action_config_label(&state.action_mapping.right),
+        left_action_count: projection.left_action_count,
+        right_action_count: projection.right_action_count,
         index,
         total,
-        queue_count,
+        queue_count: projection.queue_count,
         file_count,
         show_delete_confirm,
         show_queue_modal,
@@ -1027,17 +1034,24 @@ fn action_config_label(action: &ActionConfig) -> String {
     }
 }
 
-fn build_stack_cards(inner: &crate::domain::state::AppStateInner, radius: usize) -> Vec<StackCard> {
-    if inner.order.is_empty() {
+fn build_stack_cards_in_range(
+    state: &crate::domain::state::AppStateInner,
+    start: usize,
+    end: usize,
+) -> Vec<StackCard> {
+    if state.order.is_empty() {
         return Vec::new();
     }
-    let start = inner.cursor.saturating_sub(radius);
-    let end = (inner.cursor + radius).min(inner.order.len().saturating_sub(1));
-    (start..=end)
+    let bounded_start = start.min(state.order.len().saturating_sub(1));
+    let bounded_end = end.min(state.order.len().saturating_sub(1));
+    if bounded_start > bounded_end {
+        return Vec::new();
+    }
+    (bounded_start..=bounded_end)
         .filter_map(|pos| {
-            let idx = *inner.order.get(pos)?;
-            let image = inner.images.get(idx)?;
-            let action_item = queue_item_for_image(image, inner.root_dir.as_ref());
+            let idx = *state.order.get(pos)?;
+            let image = state.images.get(idx)?;
+            let action_item = queue_item_for_image(image, state.root_dir.as_ref());
             Some(StackCard {
                 image_id: image.id,
                 image_src: format!("/image/{}", image.id),
@@ -1117,20 +1131,20 @@ fn queue_item_none(image: &ImageEntry, root_dir: Option<&PathBuf>) -> QueueItem 
 
 #[cfg(test)]
 fn preload_window_paths(
-    inner: &crate::domain::state::AppStateInner,
+    state: &crate::domain::state::AppStateInner,
     radius: usize,
 ) -> std::collections::VecDeque<PathBuf> {
-    if inner.order.is_empty() {
+    if state.order.is_empty() {
         return std::collections::VecDeque::new();
     }
-    let start = inner.cursor.saturating_sub(radius);
-    let end = (inner.cursor + radius).min(inner.order.len().saturating_sub(1));
+    let start = state.cursor.saturating_sub(radius);
+    let end = (state.cursor + radius).min(state.order.len().saturating_sub(1));
     let mut window = std::collections::VecDeque::new();
     for pos in start..=end {
-        if let Some(path) = inner
+        if let Some(path) = state
             .order
             .get(pos)
-            .and_then(|idx| inner.images.get(*idx))
+            .and_then(|idx| state.images.get(*idx))
             .map(|entry| entry.path.clone())
         {
             window.push_back(path);
@@ -1139,13 +1153,9 @@ fn preload_window_paths(
     window
 }
 
-fn modal_layer(stack: &[ModalView], view: ModalView) -> usize {
+fn modal_layer(active_modal: Option<ModalView>, view: ModalView) -> usize {
     let base = 1000usize;
-    stack
-        .iter()
-        .position(|entry| *entry == view)
-        .map(|idx| base + idx)
-        .unwrap_or(0)
+    if active_modal == Some(view) { base } else { 0 }
 }
 
 #[derive(Template)]
@@ -1213,8 +1223,8 @@ mod tests {
             key: SortKey::Filesystem,
             direction: SortDirection::Asc,
         };
-        let mut inner = crate::domain::state::AppStateInner::new(true, mapping, sort_mode);
-        inner.set_images(
+        let mut state = crate::domain::state::AppStateInner::new(true, mapping, sort_mode);
+        state.set_images(
             vec![
                 sample_image(1, "/tmp/a.jpg", 0),
                 sample_image(2, "/tmp/b.jpg", 1),
@@ -1224,14 +1234,14 @@ mod tests {
             ],
             Some(PathBuf::from("/tmp")),
         );
-        inner
+        state
     }
 
     #[test]
     fn preload_window_is_bounded_and_ordered() {
-        let mut inner = sample_state();
-        inner.cursor = 2;
-        let window = preload_window_paths(&inner, 1);
+        let mut state = sample_state();
+        state.cursor = 2;
+        let window = preload_window_paths(&state, 1);
         let labels: Vec<String> = window
             .iter()
             .filter_map(|path| {
@@ -1244,13 +1254,13 @@ mod tests {
 
     #[test]
     fn image_card_render_contains_entry_identity_and_alignment() {
-        let mut inner = sample_state();
-        inner.images[1].decision = DecisionState::Decided {
+        let mut state = sample_state();
+        state.images[1].decision = DecisionState::Decided {
             side: DecisionSide::Right,
             action: ActionConfig::Keep,
         };
-        inner.cursor = 1;
-        let cards = build_stack_cards(&inner, 1);
+        state.cursor = 1;
+        let cards = build_stack_cards_in_range(&state, 0, 2);
         let card = cards.iter().find(|card| card.image_id == 2).unwrap();
         let html = render_image_card(card);
         assert!(html.contains("id=\"image-card-2\""));

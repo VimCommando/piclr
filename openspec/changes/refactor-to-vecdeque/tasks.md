@@ -27,10 +27,9 @@
 
 ## 5. CQRS and State Simplification Follow-ups
 
-- [ ] 5.1 Introduce an explicit backend queue collection (`queued_ids: VecDeque<u64>`) and stop deriving queue order from `images + order + queued_action` scans.
-- [ ] 5.2 Split write-model command state from read-model UI projection state, with command handlers updating domain state and projection updates feeding UI rendering.
-- [ ] 5.3 Route all state mutations through explicit command handlers (e.g., `Decide`, `Undo`, `ApplyQueue`, `SelectImage`) and remove ad hoc mutation paths.
-- [ ] 5.4 Shift from repeated full-view recomputation to incremental projection updates for counters, queue summaries, and stack-window UI state.
-- [ ] 5.5 Treat image scan output as a versioned immutable snapshot and reconcile decision/queue metadata by image id on rescan.
-- [ ] 5.6 Simplify modal state handling by replacing `view_stack` with `active_modal: Option<ModalView>` when single-modal behavior is sufficient, or enforce strict stack semantics otherwise.
-- [ ] 5.7 Add invariant checks after command execution (queue id validity, queue id uniqueness, cursor/order consistency) with tests to catch state drift early.
+- [x] 5.1 Introduce an explicit backend queue collection (`queued_ids: VecDeque<u64>`) and stop deriving queue order from `images + order + queued_action` scans.
+- [x] 5.2 Split write-model command state from read-model UI projection state, with command handlers updating domain state and projection updates feeding UI rendering.
+- [x] 5.3 Route all state mutations through explicit command handlers (e.g., `Decide`, `Undo`, `ApplyQueue`, `SelectImage`) and remove ad hoc mutation paths.
+- [x] 5.4 Shift from repeated full-view recomputation to incremental projection updates for counters, queue summaries, and stack-window UI state.
+- [x] 5.5 Treat image scan output as a versioned immutable snapshot and reconcile decision/queue metadata by image id on rescan.
+- [x] 5.6 Simplify modal state handling by replacing `view_stack` with `active_modal: Option<ModalView>` when single-modal behavior is sufficient, or enforce strict stack semantics otherwise.

@@ -6,4 +6,4 @@ pub mod undo;
 
 pub use actions::{ActionConfig, ActionMapping, DecisionSide, DecisionState};
 pub use sorting::{SortDirection, SortKey, SortMode};
-pub use state::{AppMode, AppState, AppStateMachine, ImageEntry, ImageMeta, ModalView};
+pub use state::{App, AppMode, AppStateMachine, ImageEntry, ImageMeta, ModalView};
