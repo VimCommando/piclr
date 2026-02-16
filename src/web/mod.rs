@@ -1267,4 +1267,25 @@ mod tests {
         assert!(html.contains("class=\"align-right\""));
         assert!(html.contains("src=\"/image/2\""));
     }
+
+    #[test]
+    fn image_card_markup_is_identical_for_hydration_and_single_entry_paths() {
+        let mut state = sample_state();
+        state.images[2].decision = DecisionState::Decided {
+            side: DecisionSide::Left,
+            action: ActionConfig::Delete,
+        };
+        state.cursor = 2;
+        let cards = build_stack_cards_in_range(&state, 1, 3);
+
+        let hydrated_html = cards
+            .iter()
+            .map(render_image_card)
+            .collect::<Vec<_>>()
+            .join("");
+        let single_entry_card = cards.iter().find(|card| card.image_id == 3).unwrap();
+        let single_entry_html = render_image_card(single_entry_card);
+
+        assert!(hydrated_html.contains(&single_entry_html));
+    }
 }

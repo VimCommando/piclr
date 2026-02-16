@@ -5,7 +5,7 @@ use clap::Parser;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use piclr::app::{AppConfig, AppContext};
-use piclr::domain::{ActionMapping, AppStateMachine};
+use piclr::domain::{ActionMapping, AppState};
 use piclr::fs::scan_images;
 use piclr::web::router;
 
@@ -32,10 +32,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let state = AppStateMachine::new(config.queue_mode, ActionMapping {
-        left: config.action_mapping.left.clone(),
-        right: config.action_mapping.right.clone(),
-    }, config.sort_mode);
+    let state = AppState::new(
+        config.queue_mode,
+        ActionMapping {
+            left: config.action_mapping.left.clone(),
+            right: config.action_mapping.right.clone(),
+        },
+        config.sort_mode,
+    );
 
     let ctx = AppContext::new(state, config);
 

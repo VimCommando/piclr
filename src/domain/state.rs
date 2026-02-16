@@ -392,8 +392,7 @@ impl AppStateInner {
             return;
         }
         self.projection.stack_start = self.cursor.saturating_sub(radius);
-        self.projection.stack_end =
-            (self.cursor + radius).min(self.order.len().saturating_sub(1));
+        self.projection.stack_end = (self.cursor + radius).min(self.order.len().saturating_sub(1));
     }
 
     fn rebuild_projection_counters(&mut self) {
@@ -419,7 +418,6 @@ impl AppStateInner {
         self.rebuild_projection_counters();
         self.update_stack_projection(5);
     }
-
 }
 
 #[derive(Clone, Debug)]
@@ -469,11 +467,7 @@ impl App<Init> {
 }
 
 impl App<Scanning> {
-    pub fn with_images(
-        mut self,
-        images: Vec<ImageEntry>,
-        root_dir: Option<PathBuf>,
-    ) -> App<Ready> {
+    pub fn with_images(mut self, images: Vec<ImageEntry>, root_dir: Option<PathBuf>) -> App<Ready> {
         self.state.set_images(images, root_dir);
         App {
             state: self.state,
@@ -519,7 +513,7 @@ impl App<Done> {
 }
 
 #[derive(Clone, Debug)]
-pub enum AppStateMachine {
+pub enum AppState {
     Init(App<Init>),
     Scanning(App<Scanning>),
     Ready(App<Ready>),
@@ -528,71 +522,71 @@ pub enum AppStateMachine {
     Done(App<Done>),
 }
 
-impl AppStateMachine {
+impl AppState {
     pub fn new(queue_mode: bool, action_mapping: ActionMapping, sort_mode: SortMode) -> Self {
-        AppStateMachine::Init(App::new(queue_mode, action_mapping, sort_mode))
+        AppState::Init(App::new(queue_mode, action_mapping, sort_mode))
     }
 
     pub fn mode(&self) -> AppMode {
         match self {
-            AppStateMachine::Init(_) => AppMode::Init,
-            AppStateMachine::Scanning(_) => AppMode::Scanning,
-            AppStateMachine::Ready(_) => AppMode::Ready,
-            AppStateMachine::Viewing(_) => AppMode::Viewing,
-            AppStateMachine::Applying(_) => AppMode::Applying,
-            AppStateMachine::Done(_) => AppMode::Done,
+            AppState::Init(_) => AppMode::Init,
+            AppState::Scanning(_) => AppMode::Scanning,
+            AppState::Ready(_) => AppMode::Ready,
+            AppState::Viewing(_) => AppMode::Viewing,
+            AppState::Applying(_) => AppMode::Applying,
+            AppState::Done(_) => AppMode::Done,
         }
     }
 
     pub fn state(&self) -> &AppStateInner {
         match self {
-            AppStateMachine::Init(state) => &state.state,
-            AppStateMachine::Scanning(state) => &state.state,
-            AppStateMachine::Ready(state) => &state.state,
-            AppStateMachine::Viewing(state) => &state.state,
-            AppStateMachine::Applying(state) => &state.state,
-            AppStateMachine::Done(state) => &state.state,
+            AppState::Init(state) => &state.state,
+            AppState::Scanning(state) => &state.state,
+            AppState::Ready(state) => &state.state,
+            AppState::Viewing(state) => &state.state,
+            AppState::Applying(state) => &state.state,
+            AppState::Done(state) => &state.state,
         }
     }
 
     pub fn state_mut(&mut self) -> &mut AppStateInner {
         match self {
-            AppStateMachine::Init(state) => &mut state.state,
-            AppStateMachine::Scanning(state) => &mut state.state,
-            AppStateMachine::Ready(state) => &mut state.state,
-            AppStateMachine::Viewing(state) => &mut state.state,
-            AppStateMachine::Applying(state) => &mut state.state,
-            AppStateMachine::Done(state) => &mut state.state,
+            AppState::Init(state) => &mut state.state,
+            AppState::Scanning(state) => &mut state.state,
+            AppState::Ready(state) => &mut state.state,
+            AppState::Viewing(state) => &mut state.state,
+            AppState::Applying(state) => &mut state.state,
+            AppState::Done(state) => &mut state.state,
         }
     }
 
     pub fn transition_to_scanning(&mut self) {
-        if let AppStateMachine::Init(state) = self.clone() {
-            *self = AppStateMachine::Scanning(state.start_scan());
+        if let AppState::Init(state) = self.clone() {
+            *self = AppState::Scanning(state.start_scan());
         }
     }
 
     pub fn transition_to_ready(&mut self, images: Vec<ImageEntry>, root_dir: Option<PathBuf>) {
-        if let AppStateMachine::Scanning(state) = self.clone() {
-            *self = AppStateMachine::Ready(state.with_images(images, root_dir));
+        if let AppState::Scanning(state) = self.clone() {
+            *self = AppState::Ready(state.with_images(images, root_dir));
         }
     }
 
     pub fn transition_to_viewing(&mut self) {
-        if let AppStateMachine::Ready(state) = self.clone() {
-            *self = AppStateMachine::Viewing(state.start_viewing());
+        if let AppState::Ready(state) = self.clone() {
+            *self = AppState::Viewing(state.start_viewing());
         }
     }
 
     pub fn transition_to_applying(&mut self) {
-        if let AppStateMachine::Viewing(state) = self.clone() {
-            *self = AppStateMachine::Applying(state.start_applying());
+        if let AppState::Viewing(state) = self.clone() {
+            *self = AppState::Applying(state.start_applying());
         }
     }
 
     pub fn transition_to_done(&mut self) {
-        if let AppStateMachine::Applying(state) = self.clone() {
-            *self = AppStateMachine::Done(state.finish());
+        if let AppState::Applying(state) = self.clone() {
+            *self = AppState::Done(state.finish());
         }
     }
 }

@@ -3,9 +3,7 @@ use std::sync::Arc;
 
 use tokio::sync::{RwLock, broadcast};
 
-use crate::domain::{
-    ActionConfig, ActionMapping, AppStateMachine, SortDirection, SortKey, SortMode,
-};
+use crate::domain::{ActionConfig, ActionMapping, AppState, SortDirection, SortKey, SortMode};
 
 #[derive(Clone, Debug)]
 pub struct AppConfig {
@@ -40,14 +38,14 @@ impl Default for AppConfig {
 
 #[derive(Clone)]
 pub struct AppContext {
-    pub state: Arc<RwLock<AppStateMachine>>,
+    pub state: Arc<RwLock<AppState>>,
     pub config: AppConfig,
     pub rendered_stack_ids: Arc<RwLock<Vec<u64>>>,
     pub sse_tx: broadcast::Sender<axum::response::sse::Event>,
 }
 
 impl AppContext {
-    pub fn new(state: AppStateMachine, config: AppConfig) -> Self {
+    pub fn new(state: AppState, config: AppConfig) -> Self {
         let (sse_tx, _) = broadcast::channel(64);
         Self {
             state: Arc::new(RwLock::new(state)),
