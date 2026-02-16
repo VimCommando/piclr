@@ -2,6 +2,29 @@
 name = "piclr"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"
+description = "Rapidly sort large folders of images with left/right actions."
+license = "MIT"
+readme = "README.md"
+documentation = "https://docs.rs/piclr"
+keywords = ["images", "sorting", "tauri", "axum", "datastar"]
+categories = ["gui", "multimedia::images"]
+include = [
+    "src/**",
+    "templates/**",
+    "assets/**",
+    "tauri-dist/**",
+    "icons/icon.icns",
+    "icons/icon.ico",
+    "icons/icon.png",
+    "tests/**",
+    "build.rs",
+    "Cargo.toml",
+    "Cargo.lock",
+    "README.md",
+    "LICENSE",
+    "tauri.conf.json",
+]
 
 [features]
 default = []
@@ -39,6 +62,7 @@ optional = true
 [build-dependencies]
 ureq = "2"
 tauri-build = { version = "2", optional = true , features = [] }
+
 [dependencies.rexiv2]
 version = "0.10"
 optional = true
