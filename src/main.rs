@@ -60,6 +60,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     #[cfg(feature = "tauri")]
     {
+        piclr::linux_tauri_support::check_linux_tauri_prerequisites()
+            .map_err(std::io::Error::other)?;
         let server = tokio::spawn(async move { axum::serve(listener, app).await });
         piclr::tauri_shell::launch(url)?;
         server.abort();
