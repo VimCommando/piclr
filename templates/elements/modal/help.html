@@ -6,39 +6,39 @@
     <modal-backdrop></modal-backdrop>
     <modal-card class="wide">
         <h2>Key Bindings</h2>
-        <div class="help-scroll">
-            <section class="help">
+        <help-scroll>
+            <help-section>
                 <h3>Movement</h3>
-                <ul class="help-list">
-                    <li><help-key>↑</help-key><help-desc>Previous image</help-desc></li>
-                    <li><help-key>↓</help-key><help-desc>Next image</help-desc></li>
-                    <li><help-key>Shift + ↑</help-key><help-desc>Jump to previous undecided</help-desc></li>
-                    <li><help-key>Shift + ↓</help-key><help-desc>Jump to next undecided</help-desc></li>
-                    <li><help-key>Shift + K / J</help-key><help-desc>Jump to previous / next undecided</help-desc></li>
-                    <li><help-key>J / K</help-key><help-desc>Next / previous image</help-desc></li>
-                </ul>
-            </section>
-            <section class="help">
+                <help-list>
+                    <help-item><help-key>↑</help-key><help-desc>Previous image</help-desc></help-item>
+                    <help-item><help-key>↓</help-key><help-desc>Next image</help-desc></help-item>
+                    <help-item><help-key>Shift + ↑</help-key><help-desc>Jump to previous undecided</help-desc></help-item>
+                    <help-item><help-key>Shift + ↓</help-key><help-desc>Jump to next undecided</help-desc></help-item>
+                    <help-item><help-key>Shift + K / J</help-key><help-desc>Jump to previous / next undecided</help-desc></help-item>
+                    <help-item><help-key>J / K</help-key><help-desc>Next / previous image</help-desc></help-item>
+                </help-list>
+            </help-section>
+            <help-section>
                 <h3>Actions</h3>
-                <ul class="help-list">
-                    <li><help-key>←</help-key><help-desc>Apply left action</help-desc></li>
-                    <li><help-key>→</help-key><help-desc>Apply right action</help-desc></li>
-                    <li><help-key>H / L</help-key><help-desc>Apply left / right action</help-desc></li>
-                    <li><help-key>U</help-key><help-desc>Undo last command</help-desc></li>
-                    <li><help-key>Shift + A</help-key><help-desc>Apply queued actions</help-desc></li>
-                </ul>
-            </section>
-            <section class="help">
+                <help-list>
+                    <help-item><help-key>←</help-key><help-desc>Apply left action</help-desc></help-item>
+                    <help-item><help-key>→</help-key><help-desc>Apply right action</help-desc></help-item>
+                    <help-item><help-key>H / L</help-key><help-desc>Apply left / right action</help-desc></help-item>
+                    <help-item><help-key>U</help-key><help-desc>Undo last command</help-desc></help-item>
+                    <help-item><help-key>Shift + A</help-key><help-desc>Apply queued actions</help-desc></help-item>
+                </help-list>
+            </help-section>
+            <help-section>
                 <h3>Modals</h3>
-                <ul class="help-list">
-                    <li><help-key>Q</help-key><help-desc>Show queued actions</help-desc></li>
-                    <li><help-key>I</help-key><help-desc>Show image list</help-desc></li>
-                    <li><help-key>?</help-key><help-desc>Show help</help-desc></li>
-                    <li><help-key>Esc</help-key><help-desc>Close top modal</help-desc></li>
-                    <li><help-key>Ctrl + O</help-key><help-desc>Open directory</help-desc></li>
-                </ul>
-            </section>
-        </div>
+                <help-list>
+                    <help-item><help-key>Q</help-key><help-desc>Show queued actions</help-desc></help-item>
+                    <help-item><help-key>I</help-key><help-desc>Show image list</help-desc></help-item>
+                    <help-item><help-key>?</help-key><help-desc>Show help</help-desc></help-item>
+                    <help-item><help-key>Esc</help-key><help-desc>Close top modal</help-desc></help-item>
+                    <help-item><help-key>Ctrl + O</help-key><help-desc>Open directory</help-desc></help-item>
+                </help-list>
+            </help-section>
+        </help-scroll>
         <command-list>
             <button autofocus data-on:click="@post('/cmd/close')">✖️ Close</button>
         </command-list>

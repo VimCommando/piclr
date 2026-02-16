@@ -9,23 +9,22 @@
         {% if view.total == 0 %}
         <p>No files loaded.</p>
         {% else %}
-        <ul
+        <queue-log
             id="files-log-list"
-            class="queue-log"
             data-init="window.piclrInitQueueLog?.(document.getElementById('files-log-list'))"
         >
             {% for item in view.file_items %}
-            <li
-                class="queue-entry queue-tone-{{ item.action_tone }}{% if item.image_id == view.current_image_id %} log-entry-current{% endif %}"
+            <queue-entry
+                class="tone-{{ item.action_tone }}{% if item.image_id == view.current_image_id %} log-entry-current{% endif %}"
                 data-image-id="{{ item.image_id }}"
                 data-on:click="@post('/cmd/select/{{ item.image_id }}')"
             >
-                <span class="queue-arrow">{{ item.arrow }}</span>
-                <span class="queue-action">{{ item.action_label }}</span>
-                <code class="queue-file">{{ item.file_label }}</code>
-            </li>
+                <queue-arrow>{{ item.arrow }}</queue-arrow>
+                <queue-action>{{ item.action_label }}</queue-action>
+                <queue-file>{{ item.file_label }}</queue-file>
+            </queue-entry>
             {% endfor %}
-        </ul>
+        </queue-log>
         {% endif %}
         <command-list>
             <button data-on:click="@post('/cmd/queue/reset')">🔄 Reset</button>

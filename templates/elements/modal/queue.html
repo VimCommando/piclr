@@ -9,23 +9,23 @@
         {% if view.queue_items.is_empty() %}
         <p>No queued actions.</p>
         {% else %}
-        <ul
+        <queue-log
             id="queue-log-list"
-            class="queue-log{% if view.queue_insert_at_end %} queue-log-insert-end{% endif %}"
+            class="{% if view.queue_insert_at_end %}insert-end{% endif %}"
             data-init="window.piclrInitQueueLog?.(document.getElementById('queue-log-list'))"
         >
             {% for item in view.queue_items %}
-            <li
-                class="queue-entry queue-tone-{{ item.action_tone }}{% if item.image_id == view.current_image_id %} log-entry-current{% endif %}{% if item.is_insert_before %} queue-entry-insert-before{% endif %}"
+            <queue-entry
+                class="tone-{{ item.action_tone }}{% if item.image_id == view.current_image_id %} log-entry-current{% endif %}{% if item.is_insert_before %} insert-before{% endif %}"
                 data-image-id="{{ item.image_id }}"
                 data-on:click="@post('/cmd/select/{{ item.image_id }}')"
             >
-                <span class="queue-arrow">{{ item.arrow }}</span>
-                <span class="queue-action">{{ item.action_label }}</span>
-                <code class="queue-file">{{ item.file_label }}</code>
-            </li>
+                <queue-arrow>{{ item.arrow }}</queue-arrow>
+                <queue-action>{{ item.action_label }}</queue-action>
+                <queue-file>{{ item.file_label }}</queue-file>
+            </queue-entry>
             {% endfor %}
-        </ul>
+        </queue-log>
         {% endif %}
         <command-list>
             <button data-on:click="@post('/cmd/queue/reset')">🔄 Reset</button>

@@ -9,11 +9,11 @@
             alt="{{ card.action_item.file_label }}"
         />
     </card-media>
-    <card-caption
-        class="queue-entry queue-tone-{{ card.action_item.action_tone }}"
-    >
-        <span class="queue-arrow">{{ card.action_item.arrow }}</span>
-        <span class="queue-action">{{ card.action_item.action_label }}</span>
-        <code class="queue-file">{{ card.action_item.file_label }}</code>
+    <card-caption>
+        <queue-entry class="tone-{{ card.action_item.action_tone }}">
+            <queue-arrow>{{ card.action_item.arrow }}</queue-arrow>
+            <queue-action>{{ card.action_item.action_label }}</queue-action>
+            <queue-file>{{ card.action_item.file_label }}</queue-file>
+        </queue-entry>
     </card-caption>
 </image-card>

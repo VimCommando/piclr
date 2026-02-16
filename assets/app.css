@@ -30,17 +30,13 @@ html,
 body {
     background: var(--bg);
     color: var(--text);
-    font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
-    height: 100%;
-    margin: 0;
-    overflow: hidden;
-}
-
-app {
-    height: 100vh;
-    min-height: 0;
     display: flex;
     flex-direction: column;
+    font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
+    height: 100vh;
+    margin: 0;
+    min-height: 0;
+    overflow: hidden;
 }
 
 button:disabled,
@@ -294,11 +290,19 @@ footer {
     border-top: 1px solid var(--border-color);
 }
 
-footer app-title {
+app-title {
     padding: 0 var(--space-1);
     font-size: 1em;
     letter-spacing: 0.08em;
     text-transform: uppercase;
+}
+
+app-title > left {
+    color: darkred;
+}
+
+app-title > right {
+    color: royalblue;
 }
 
 command-list {
@@ -374,7 +378,7 @@ modal-card.wide {
     text-align: left;
 }
 
-.queue-log {
+queue-log {
     list-style: none;
     padding: 0;
     margin: 0;
@@ -387,7 +391,7 @@ modal-card.wide {
     font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
 }
 
-.queue-entry {
+queue-entry {
     display: grid;
     grid-template-columns: 32px 150px 1fr;
     align-items: center;
@@ -398,45 +402,45 @@ modal-card.wide {
     font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
 }
 
-.queue-log .queue-entry:hover {
+queue-log queue-entry:hover {
     background: rgba(255, 255, 255, 0.08);
 }
 
-.queue-log .queue-entry {
+queue-log queue-entry {
     cursor: pointer;
 }
 
-.queue-entry.log-entry-current {
+queue-entry.log-entry-current {
     outline: 2px solid var(--muted);
     outline-offset: -2px;
 }
 
-.queue-entry.queue-tone-left.log-entry-current {
+queue-entry.tone-left.log-entry-current {
     outline-color: var(--soft-red);
 }
 
-.queue-entry.queue-tone-right.log-entry-current {
+queue-entry.tone-right.log-entry-current {
     outline-color: var(--soft-green);
 }
 
-.queue-entry:last-child {
+queue-entry:last-child {
     border-bottom: none;
 }
 
-.queue-entry.queue-entry-insert-before {
+queue-entry.insert-before {
     box-shadow: inset 0 2px 0 0 var(--muted);
 }
 
-.queue-log.queue-log-insert-end {
+queue-log.insert-end {
     box-shadow: inset 0 -2px 0 0 var(--muted);
 }
 
-.queue-log.queue-log-errors .queue-entry {
+queue-log.errors queue-entry {
     grid-template-columns: 32px 64px 1fr;
     align-items: start;
 }
 
-.queue-log.queue-log-errors .queue-file {
+queue-log.errors queue-file {
     white-space: normal;
     overflow: visible;
     text-overflow: clip;
@@ -444,18 +448,19 @@ modal-card.wide {
     word-break: break-word;
 }
 
-.queue-arrow {
+queue-arrow {
     font-size: 14px;
     color: var(--muted);
 }
 
-.queue-action {
+queue-action {
     color: var(--muted);
     font-weight: 500;
     font-family: inherit;
 }
 
-.queue-file {
+queue-file {
+    display: block;
     color: var(--muted);
     font-size: 12px;
     overflow: hidden;
@@ -466,45 +471,45 @@ modal-card.wide {
     background: none;
 }
 
-.queue-tone-left .queue-action {
+queue-entry.tone-left queue-action {
     color: var(--soft-red);
 }
 
-.queue-tone-left {
+queue-entry.tone-left {
     background: var(--soft-red-bg);
 }
 
-.queue-tone-right .queue-action {
+queue-entry.tone-right queue-action {
     color: var(--soft-green);
 }
 
-.queue-tone-right {
+queue-entry.tone-right {
     background: var(--soft-green-bg);
 }
 
-.queue-tone-neutral .queue-action {
+queue-entry.tone-neutral queue-action {
     color: var(--muted);
 }
 
-.queue-tone-neutral {
+queue-entry.tone-neutral {
     background: rgba(154, 163, 178, 0.1);
 }
 
-.help-list {
+help-list {
+    display: grid;
     list-style: none;
     margin: 0;
     padding: 0;
-    display: grid;
     gap: var(--space-1);
     color: var(--muted);
     font-size: 14px;
 }
 
-section.help {
+help-section {
     margin: 0;
 }
 
-section.help h3 {
+help-section h3 {
     margin: 0 0 6px 0;
     font-size: 13px;
     letter-spacing: 0.04em;
@@ -512,13 +517,14 @@ section.help h3 {
     color: var(--text);
 }
 
-.help-scroll {
+help-scroll {
+    display: block;
     overflow-y: auto;
     max-height: 50vh;
     padding-right: var(--space-1);
 }
 
-.help-list li {
+help-item {
     display: grid;
     grid-template-columns: 180px 1fr;
     align-items: baseline;

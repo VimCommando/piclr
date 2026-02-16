@@ -70,6 +70,7 @@
         </script>
     </head>
     <body
+        id="app"
         data-init="@patch('/events', { openWhenHidden: true })"
         data-on:keydown="
             if (evt.key === 'ArrowLeft') { evt.preventDefault(); @post('/cmd/left') }
@@ -93,46 +94,44 @@
             if (evt.key === 'Escape') { evt.preventDefault(); @post('/cmd/close') }
         "
     >
-        <app id="app">
-            {% include "elements/modal/none.html" %}
-            {% include "elements/header.html" %}
-            {% include "elements/image-viewer.html" %}
-            {% include "elements/footer.html" %}
-            <input
-                id="directory-picker"
-                type="file"
-                webkitdirectory
-                directory
-                hidden
-                data-on:change="
-                    const files = Array.from(evt.target.files || [])
-                    if (files.length === 0) { return }
-                    const first = files[0]
-                    let selectedDirectoryPath = ''
-                    if (first.path) {
-                        selectedDirectoryPath = first.path.replace(/[\\\\/][^\\\\/]+$/, '')
+        {% include "elements/modal/none.html" %}
+        {% include "elements/header.html" %}
+        {% include "elements/image-viewer.html" %}
+        {% include "elements/footer.html" %}
+        <input
+            id="directory-picker"
+            type="file"
+            webkitdirectory
+            directory
+            hidden
+            data-on:change="
+                const files = Array.from(evt.target.files || [])
+                if (files.length === 0) { return }
+                const first = files[0]
+                let selectedDirectoryPath = ''
+                if (first.path) {
+                    selectedDirectoryPath = first.path.replace(/[\\\\/][^\\\\/]+$/, '')
+                }
+                if (!selectedDirectoryPath && first.webkitRelativePath) {
+                    selectedDirectoryPath = first.webkitRelativePath.split('/')[0] || ''
+                }
+                if (selectedDirectoryPath) {
+                    const signalInput = document.getElementById('directory-path-signal')
+                    if (signalInput instanceof HTMLInputElement) {
+                        signalInput.value = selectedDirectoryPath
+                        signalInput.dispatchEvent(new Event('input', { bubbles: true }))
+                        signalInput.dispatchEvent(new Event('change', { bubbles: true }))
                     }
-                    if (!selectedDirectoryPath && first.webkitRelativePath) {
-                        selectedDirectoryPath = first.webkitRelativePath.split('/')[0] || ''
-                    }
-                    if (selectedDirectoryPath) {
-                        const signalInput = document.getElementById('directory-path-signal')
-                        if (signalInput instanceof HTMLInputElement) {
-                            signalInput.value = selectedDirectoryPath
-                            signalInput.dispatchEvent(new Event('input', { bubbles: true }))
-                            signalInput.dispatchEvent(new Event('change', { bubbles: true }))
-                        }
-                    }
-                    evt.target.value = ''
-                "
-            />
-            <input
-                id="directory-path-signal"
-                type="text"
-                hidden
-                data-bind:directory-path
-                data-on:change="@patch('/cmd/update-directory')"
-            />
-        </app>
+                }
+                evt.target.value = ''
+            "
+        />
+        <input
+            id="directory-path-signal"
+            type="text"
+            hidden
+            data-bind:directory-path
+            data-on:change="@patch('/cmd/update-directory')"
+        />
     </body>
 </html>

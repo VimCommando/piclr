@@ -9,15 +9,15 @@
         <p>{{ view.apply_completed }} of {{ view.apply_total }} actions completed successfully.</p>
         {% if view.apply_failed > 0 %}
         <p>Failed: {{ view.apply_failed }}</p>
-        <ul class="queue-log queue-log-errors">
+        <queue-log class="errors">
             {% for err in view.apply_errors %}
-            <li class="queue-entry queue-tone-left">
-                <span class="queue-arrow">!</span>
-                <span class="queue-action">Error</span>
-                <code class="queue-file">{{ err }}</code>
-            </li>
+            <queue-entry class="tone-left">
+                <queue-arrow>!</queue-arrow>
+                <queue-action>Error</queue-action>
+                <queue-file>{{ err }}</queue-file>
+            </queue-entry>
             {% endfor %}
-        </ul>
+        </queue-log>
         {% endif %}
         <modal-actions>
             <button autofocus data-on:click="@post('/cmd/close')">Close</button>

@@ -1,9 +1,9 @@
 <footer id="footerbar">
     <section aria-label="App name">
         <app-title>
-            <span style="color: darkred">◀</span>
-            &nbsp;piclr&nbsp;
-            <span style="color: royalblue">▶</span>
+            <left>◀</left>
+            piclr
+            <right>▶</right>
         </app-title>
     </section>
     <section aria-label="Commands">
@@ -23,7 +23,12 @@
         </command-list>
     </section>
     <section aria-label="Settings">
-        <button id="settings-button" type="button" title="Settings">
+        <button
+            id="settings-button"
+            type="button"
+            title="Settings"
+            data-on:click="@post('/cmd/help')"
+        >
             <glyph>⚙️</glyph>
         </button>
     </section>
