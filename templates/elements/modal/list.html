@@ -1,0 +1,35 @@
+<modal-list
+    id="modal"
+    data-init="window.piclrInitModal?.(document.getElementById('modal'))"
+    data-on:click="if (evt.target === evt.currentTarget || evt.target.tagName === 'MODAL-BACKDROP') { @post('/cmd/close') }"
+>
+    <modal-backdrop></modal-backdrop>
+    <modal-card class="wide">
+        <h2>Images</h2>
+        {% if view.total == 0 %}
+        <p>No files loaded.</p>
+        {% else %}
+        <ul
+            id="files-log-list"
+            class="queue-log"
+            data-init="window.piclrInitQueueLog?.(document.getElementById('files-log-list'))"
+        >
+            {% for item in view.file_items %}
+            <li
+                class="queue-entry queue-tone-{{ item.action_tone }}{% if item.image_id == view.current_image_id %} log-entry-current{% endif %}"
+                data-image-id="{{ item.image_id }}"
+                data-on:click="@post('/cmd/select/{{ item.image_id }}')"
+            >
+                <span class="queue-arrow">{{ item.arrow }}</span>
+                <span class="queue-action">{{ item.action_label }}</span>
+                <code class="queue-file">{{ item.file_label }}</code>
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+        <command-list>
+            <button data-on:click="@post('/cmd/queue/reset')">🔄 Reset</button>
+            <button autofocus data-on:click="@post('/cmd/close')">✖️ Close</button>
+        </command-list>
+    </modal-card>
+</modal-list>

@@ -1,0 +1,26 @@
+<modal-result
+    id="modal"
+    data-init="window.piclrInitModal?.(document.getElementById('modal'))"
+    data-on:click="if (evt.target === evt.currentTarget || evt.target.tagName === 'MODAL-BACKDROP') { @post('/cmd/close') }"
+>
+    <modal-backdrop></modal-backdrop>
+    <modal-card class="wide">
+        <h2>Apply Complete</h2>
+        <p>{{ view.apply_completed }} of {{ view.apply_total }} actions completed successfully.</p>
+        {% if view.apply_failed > 0 %}
+        <p>Failed: {{ view.apply_failed }}</p>
+        <ul class="queue-log queue-log-errors">
+            {% for err in view.apply_errors %}
+            <li class="queue-entry queue-tone-left">
+                <span class="queue-arrow">!</span>
+                <span class="queue-action">Error</span>
+                <code class="queue-file">{{ err }}</code>
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+        <modal-actions>
+            <button autofocus data-on:click="@post('/cmd/close')">Close</button>
+        </modal-actions>
+    </modal-card>
+</modal-result>

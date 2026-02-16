@@ -7,8 +7,8 @@ use tokio::task::spawn_blocking;
 use tracing::warn;
 use walkdir::WalkDir;
 
-use crate::domain::{ActionConfig, ImageEntry, ImageMeta};
 use crate::domain::undo::UndoAction;
+use crate::domain::{ActionConfig, ImageEntry, ImageMeta};
 
 #[derive(Clone, Debug)]
 pub struct FsConfig {
@@ -179,7 +179,11 @@ pub async fn apply_undo_action(action: &UndoAction) -> Result<(), std::io::Error
             }
             fs::rename(trashed, original).await
         }
-        UndoAction::Metadata { path, key, previous } => {
+        UndoAction::Metadata {
+            path,
+            key,
+            previous,
+        } => {
             if let Some(value) = previous {
                 apply_metadata_edit(path, key, value).await
             } else {
@@ -206,7 +210,12 @@ async fn apply_metadata_edit(path: &Path, key: &str, value: &str) -> Result<(), 
         Ok(())
     })
     .await
-    .unwrap_or_else(|err| Err(std::io::Error::new(std::io::ErrorKind::Other, err.to_string())))
+    .unwrap_or_else(|err| {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            err.to_string(),
+        ))
+    })
 }
 
 #[cfg(not(feature = "metadata"))]

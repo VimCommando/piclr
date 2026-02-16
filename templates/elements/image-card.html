@@ -3,16 +3,17 @@
     class="align-{{ card.alignment }}"
     style="--stack-index: {{ card.stack_index }};"
 >
-    <div class="card-media">
+    <card-media>
         <img
-            class="card-img"
             src="{{ card.image_src }}"
             alt="{{ card.action_item.file_label }}"
         />
-    </div>
-    <div class="card-caption queue-entry queue-tone-{{ card.action_item.action_tone }}">
+    </card-media>
+    <card-caption
+        class="queue-entry queue-tone-{{ card.action_item.action_tone }}"
+    >
         <span class="queue-arrow">{{ card.action_item.arrow }}</span>
         <span class="queue-action">{{ card.action_item.action_label }}</span>
         <code class="queue-file">{{ card.action_item.file_label }}</code>
-    </div>
+    </card-caption>
 </image-card>

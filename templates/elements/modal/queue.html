@@ -1,0 +1,36 @@
+<modal-queue
+    id="modal"
+    data-init="window.piclrInitModal?.(document.getElementById('modal'))"
+    data-on:click="if (evt.target === evt.currentTarget || evt.target.tagName === 'MODAL-BACKDROP') { @post('/cmd/close') }"
+>
+    <modal-backdrop></modal-backdrop>
+    <modal-card class="wide">
+        <h2>Queued actions</h2>
+        {% if view.queue_items.is_empty() %}
+        <p>No queued actions.</p>
+        {% else %}
+        <ul
+            id="queue-log-list"
+            class="queue-log{% if view.queue_insert_at_end %} queue-log-insert-end{% endif %}"
+            data-init="window.piclrInitQueueLog?.(document.getElementById('queue-log-list'))"
+        >
+            {% for item in view.queue_items %}
+            <li
+                class="queue-entry queue-tone-{{ item.action_tone }}{% if item.image_id == view.current_image_id %} log-entry-current{% endif %}{% if item.is_insert_before %} queue-entry-insert-before{% endif %}"
+                data-image-id="{{ item.image_id }}"
+                data-on:click="@post('/cmd/select/{{ item.image_id }}')"
+            >
+                <span class="queue-arrow">{{ item.arrow }}</span>
+                <span class="queue-action">{{ item.action_label }}</span>
+                <code class="queue-file">{{ item.file_label }}</code>
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+        <command-list>
+            <button data-on:click="@post('/cmd/queue/reset')">🔄 Reset</button>
+            <button data-on:click="@post('/cmd/apply')">▶️ Apply</button>
+            <button autofocus data-on:click="@post('/cmd/close')">✖️ Close</button>
+        </command-list>
+    </modal-card>
+</modal-queue>

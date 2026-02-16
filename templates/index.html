@@ -9,34 +9,20 @@
         <script>
             (() => {
                 const directorySelectionEnabled = {{ view.directory_select_enabled }};
-                const scrollCurrentLogEntries = () => {
-                    document.querySelectorAll(".queue-log").forEach((list) => {
-                        const current = list.querySelector(".log-entry-current");
-                        if (!current) return;
-                        const imageId = current.getAttribute("data-image-id") || "";
-                        if (list.getAttribute("data-scrolled-image-id") === imageId) return;
-                        requestAnimationFrame(() => {
-                            current.scrollIntoView({ block: "center" });
-                            list.setAttribute("data-scrolled-image-id", imageId);
-                        });
-                    });
-                };
-
-                const focusTopModalCloseButton = () => {
-                    const modals = Array.from(document.querySelectorAll(".modal"));
-                    if (modals.length === 0) return;
-                    modals.sort((a, b) => {
-                        const az = Number.parseInt(a.style.zIndex || "0", 10);
-                        const bz = Number.parseInt(b.style.zIndex || "0", 10);
-                        return az - bz;
-                    });
-                    const topModal = modals[modals.length - 1];
-                    const closeButton = topModal.querySelector(
+                window.piclrInitModal = (modal) => {
+                    if (!(modal instanceof HTMLElement)) return;
+                    const closeButton = modal.querySelector(
                         "button[data-on\\:click*=\"/cmd/close\"]",
                     );
                     if (!(closeButton instanceof HTMLButtonElement)) return;
-                    if (document.activeElement === closeButton) return;
-                    closeButton.focus({ preventScroll: true });
+                    requestAnimationFrame(() => closeButton.focus({ preventScroll: true }));
+                };
+
+                window.piclrInitQueueLog = (list) => {
+                    if (!(list instanceof HTMLElement)) return;
+                    const current = list.querySelector(".log-entry-current");
+                    if (!(current instanceof HTMLElement)) return;
+                    requestAnimationFrame(() => current.scrollIntoView({ block: "center" }));
                 };
 
                 const updateDirectorySignal = (directoryPath) => {
@@ -80,26 +66,6 @@
                     if (!(input instanceof HTMLInputElement)) return;
                     input.click();
                 };
-
-                const boot = () => {
-                    scrollCurrentLogEntries();
-                    focusTopModalCloseButton();
-                    const observer = new MutationObserver(scrollCurrentLogEntries);
-                    const focusObserver = new MutationObserver(focusTopModalCloseButton);
-                    observer.observe(document.body, { childList: true, subtree: true });
-                    focusObserver.observe(document.body, {
-                        childList: true,
-                        subtree: true,
-                        attributes: true,
-                        attributeFilter: ["style"],
-                    });
-                };
-
-                if (document.readyState === "loading") {
-                    document.addEventListener("DOMContentLoaded", boot, { once: true });
-                } else {
-                    boot();
-                }
             })();
         </script>
     </head>
@@ -128,10 +94,10 @@
         "
     >
         <app id="app">
-            {% include "partials/modal.html" %}
-            {% include "partials/header.html" %}
-            {% include "partials/viewer.html" %}
-            {% include "partials/footer.html" %}
+            {% include "elements/modal/none.html" %}
+            {% include "elements/header.html" %}
+            {% include "elements/image-viewer.html" %}
+            {% include "elements/footer.html" %}
             <input
                 id="directory-picker"
                 type="file"

@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use piclr::domain::{
-    ActionConfig, ActionMapping, AppState, DecisionSide, DecisionState, ImageEntry,
-    ImageMeta, SortDirection, SortKey, SortMode,
+    ActionConfig, ActionMapping, AppState, DecisionSide, DecisionState, ImageEntry, ImageMeta,
+    SortDirection, SortKey, SortMode,
 };
 
 fn sample_image(id: u64, path: &str, order: usize) -> ImageEntry {

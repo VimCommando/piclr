@@ -257,7 +257,7 @@ image-card.align-right {
     --align-shift: 25%;
 }
 
-image-card > .card-media {
+image-card > card-media {
     min-height: 0;
     display: flex;
     align-items: center;
@@ -265,7 +265,7 @@ image-card > .card-media {
     overflow: hidden;
 }
 
-image-card > .card-media > .card-img {
+image-card > card-media > img {
     display: block;
     width: auto;
     height: auto;
@@ -275,7 +275,7 @@ image-card > .card-media > .card-img {
     object-position: center center;
 }
 
-image-card > .card-caption {
+image-card > card-caption {
     margin: 0;
     border-radius: 0;
     border-bottom: none;
@@ -328,22 +328,35 @@ command-list > button:hover {
     color: var(--white);
 }
 
-.modal {
+modal-queue,
+modal-list,
+modal-confirm,
+modal-help,
+modal-result {
     position: fixed;
     inset: 0;
+    z-index: 1000;
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
-.modal-backdrop {
-    position: fixed;
+modal-none#modal {
+    display: none;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+modal-backdrop {
+    position: absolute;
     inset: 0;
-    z-index: 999;
+    z-index: 0;
     background: rgba(0, 0, 0, 0.55);
 }
 
-.modal-card {
+modal-card {
+    position: relative;
+    z-index: 1;
     background: var(--panel);
     padding: var(--space-5);
     border-radius: 16px;
@@ -356,7 +369,7 @@ command-list > button:hover {
     gap: var(--space-3);
 }
 
-.modal-wide {
+modal-card.wide {
     width: min(92vw, 720px);
     text-align: left;
 }
@@ -487,11 +500,11 @@ command-list > button:hover {
     font-size: 14px;
 }
 
-.help-section {
+section.help {
     margin: 0;
 }
 
-.help-section h3 {
+section.help h3 {
     margin: 0 0 6px 0;
     font-size: 13px;
     letter-spacing: 0.04em;
@@ -512,23 +525,28 @@ command-list > button:hover {
     gap: 12px;
 }
 
-.help-key {
+help-key {
     font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
     color: var(--text);
     text-align: right;
 }
 
-.help-desc {
+help-desc {
     color: var(--muted);
 }
 
-.modal-card input {
+modal-card input {
     width: 100%;
     padding: 10px 12px;
     border-radius: 10px;
     border: 1px solid rgba(255, 255, 255, 0.1);
     background: #0f1217;
     color: var(--text);
+}
+
+modal-actions {
+    display: flex;
+    justify-content: flex-end;
 }
 
 @media (max-width: 720px) {

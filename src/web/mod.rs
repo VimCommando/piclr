@@ -514,14 +514,23 @@ async fn run_scan(ctx: &AppContext, path: PathBuf) {
                     ),
                 )
             })
-            .collect::<HashMap<u64, (crate::domain::DecisionState, Option<ActionConfig>, Option<u64>)>>();
+            .collect::<HashMap<
+                u64,
+                (
+                    crate::domain::DecisionState,
+                    Option<ActionConfig>,
+                    Option<u64>,
+                ),
+            >>();
         (ids, existing)
     };
     let mut next_id = existing_ids_by_path.values().copied().max().unwrap_or(0) + 1;
     for image in &mut images {
         if let Some(existing_id) = existing_ids_by_path.get(&image.path).copied() {
             image.id = existing_id;
-            if let Some((decision, queued_action, rename_sequence)) = existing_state_by_id.get(&existing_id) {
+            if let Some((decision, queued_action, rename_sequence)) =
+                existing_state_by_id.get(&existing_id)
+            {
                 image.decision = decision.clone();
                 image.queued_action = queued_action.clone();
                 image.rename_sequence = *rename_sequence;
@@ -658,9 +667,9 @@ async fn build_patch_events(ctx: &AppContext, patch: UiPatch) -> Vec<Event> {
     }
 
     if patch.modals {
-        let html = ModalTemplate { view: &view }.render().unwrap_or_default();
+        let html = render_active_modal(&view);
         let patch = PatchElements::new(html)
-            .selector("#modal-region")
+            .selector("#modal")
             .mode(ElementPatchMode::Outer);
         events.push(patch.write_as_axum_sse_event());
     }
@@ -691,10 +700,12 @@ async fn build_stack_patch_events(
     let previous_set: HashSet<u64> = previous_ids.iter().copied().collect();
 
     if reset_rendered {
-        for image_id in &previous_ids {
-            let remove = PatchElements::new_remove(format!("#image-card-{image_id}"));
-            events.push(remove.write_as_axum_sse_event());
-        }
+        let reset_stack = PatchElements::new(
+            "<image-stack id=\"image-stack\" data-attr:style=\"'--stack-cursor:' + $stackCursor\"></image-stack>",
+        )
+        .selector("#image-stack")
+        .mode(ElementPatchMode::Outer);
+        events.push(reset_stack.write_as_axum_sse_event());
         for card in &view.image_stack.cards {
             let html = render_image_card(card);
             let patch = PatchElements::new(html)
@@ -802,17 +813,9 @@ async fn build_view(ctx: &AppContext) -> AppView {
     let total = state.order.len();
     let index = state.cursor + 1;
     let current = state.current();
-    let file_count = state.images.len();
-    let show_queue_modal = state.has_view(ModalView::Queue);
-    let show_files_modal = state.has_view(ModalView::Files);
-    let show_help_modal = state.has_view(ModalView::Help);
-    let show_apply_result = state.has_view(ModalView::ApplyResult);
-    let show_delete_confirm = state.has_view(ModalView::DeleteConfirm);
-    let queue_modal_z = modal_layer(state.active_modal, ModalView::Queue);
-    let files_modal_z = modal_layer(state.active_modal, ModalView::Files);
-    let help_modal_z = modal_layer(state.active_modal, ModalView::Help);
-    let apply_result_z = modal_layer(state.active_modal, ModalView::ApplyResult);
-    let delete_modal_z = modal_layer(state.active_modal, ModalView::DeleteConfirm);
+    let active_modal = state.active_modal;
+    let show_queue_modal = active_modal == Some(ModalView::Queue);
+    let show_files_modal = active_modal == Some(ModalView::Files);
     let last_apply_result = state.last_apply_result.clone();
     let current_path_label = state
         .root_dir
@@ -909,6 +912,7 @@ async fn build_view(ctx: &AppContext) -> AppView {
     };
     AppView {
         directory_select_enabled: cfg!(feature = "tauri"),
+        active_modal,
         image_stack,
         current_image_id: current.map(|entry| entry.id).unwrap_or(0),
         current_path_label,
@@ -919,17 +923,6 @@ async fn build_view(ctx: &AppContext) -> AppView {
         index,
         total,
         queue_count: projection.queue_count,
-        file_count,
-        show_delete_confirm,
-        show_queue_modal,
-        show_files_modal,
-        show_help_modal,
-        show_apply_result,
-        delete_modal_z,
-        queue_modal_z,
-        files_modal_z,
-        help_modal_z,
-        apply_result_z,
         apply_completed: last_apply_result.as_ref().map(|r| r.completed).unwrap_or(0),
         apply_total: last_apply_result.as_ref().map(|r| r.total).unwrap_or(0),
         apply_failed: last_apply_result.as_ref().map(|r| r.failed).unwrap_or(0),
@@ -944,6 +937,7 @@ async fn build_view(ctx: &AppContext) -> AppView {
 #[derive(Clone, Debug)]
 pub struct AppView {
     pub directory_select_enabled: bool,
+    pub active_modal: Option<ModalView>,
     pub image_stack: ImageStackProjection,
     pub current_image_id: u64,
     pub current_path_label: String,
@@ -954,17 +948,6 @@ pub struct AppView {
     pub index: usize,
     pub total: usize,
     pub queue_count: usize,
-    pub file_count: usize,
-    pub show_delete_confirm: bool,
-    pub show_queue_modal: bool,
-    pub show_files_modal: bool,
-    pub show_help_modal: bool,
-    pub show_apply_result: bool,
-    pub delete_modal_z: usize,
-    pub queue_modal_z: usize,
-    pub files_modal_z: usize,
-    pub help_modal_z: usize,
-    pub apply_result_z: usize,
     pub apply_completed: usize,
     pub apply_total: usize,
     pub apply_failed: usize,
@@ -1153,11 +1136,6 @@ fn preload_window_paths(
     window
 }
 
-fn modal_layer(active_modal: Option<ModalView>, view: ModalView) -> usize {
-    let base = 1000usize;
-    if active_modal == Some(view) { base } else { 0 }
-}
-
 #[derive(Template)]
 #[template(path = "index.html")]
 struct MainTemplate {
@@ -1165,29 +1143,60 @@ struct MainTemplate {
 }
 
 #[derive(Template)]
-#[template(path = "partials/header.html")]
+#[template(path = "elements/header.html")]
 struct HeaderTemplate<'a> {
     view: &'a AppView,
 }
 
 #[derive(Template)]
-#[template(path = "partials/viewer.html")]
+#[template(path = "elements/image-viewer.html")]
 struct ImageViewerTemplate {}
 
 #[derive(Template)]
-#[template(path = "partials/modal.html")]
-struct ModalTemplate<'a> {
+#[template(path = "elements/modal/queue.html")]
+struct QueueModalTemplate<'a> {
     view: &'a AppView,
 }
 
 #[derive(Template)]
-#[template(path = "partials/image_card.html")]
+#[template(path = "elements/modal/list.html")]
+struct ListModalTemplate<'a> {
+    view: &'a AppView,
+}
+
+#[derive(Template)]
+#[template(path = "elements/modal/confirm.html")]
+struct ConfirmModalTemplate {}
+
+#[derive(Template)]
+#[template(path = "elements/modal/help.html")]
+struct HelpModalTemplate {}
+
+#[derive(Template)]
+#[template(path = "elements/modal/result.html")]
+struct ResultModalTemplate<'a> {
+    view: &'a AppView,
+}
+
+#[derive(Template)]
+#[template(path = "elements/image-card.html")]
 struct ImageCardTemplate<'a> {
     card: &'a StackCard,
 }
 
 fn render_image_card(card: &StackCard) -> String {
     ImageCardTemplate { card }.render().unwrap_or_default()
+}
+
+fn render_active_modal(view: &AppView) -> String {
+    match view.active_modal {
+        Some(ModalView::Queue) => QueueModalTemplate { view }.render().unwrap_or_default(),
+        Some(ModalView::Files) => ListModalTemplate { view }.render().unwrap_or_default(),
+        Some(ModalView::DeleteConfirm) => ConfirmModalTemplate {}.render().unwrap_or_default(),
+        Some(ModalView::Help) => HelpModalTemplate {}.render().unwrap_or_default(),
+        Some(ModalView::ApplyResult) => ResultModalTemplate { view }.render().unwrap_or_default(),
+        None => "<modal-none id=\"modal\"></modal-none>".to_string(),
+    }
 }
 
 #[cfg(test)]

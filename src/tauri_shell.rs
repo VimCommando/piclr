@@ -1,7 +1,7 @@
 #[cfg(feature = "tauri")]
-use tauri::Manager;
-#[cfg(feature = "tauri")]
 use rfd::FileDialog;
+#[cfg(feature = "tauri")]
+use tauri::Manager;
 
 #[cfg(feature = "tauri")]
 #[tauri::command]
