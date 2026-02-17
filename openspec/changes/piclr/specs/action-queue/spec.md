@@ -8,7 +8,7 @@ The system MUST track a decision state per image, including undecided and decide
 - **THEN** all images are marked as undecided
 
 ### Requirement: Configurable action mapping
-The system MUST allow left and right decisions to map to one of the supported actions: delete, keep, move, rename, or metadata edit.
+The system MUST allow left and right decisions to map to one of the supported actions: delete, keep, move, rename, and optionally metadata edit when metadata support is enabled.
 
 #### Scenario: Left action is configured
 - **WHEN** the user configures the left action to move
@@ -70,7 +70,7 @@ The system MUST require explicit configuration to enable permanent deletion.
 - **WHEN** the user has not enabled destructive deletion
 - **THEN** delete actions move files to `trash/` and do not permanently delete files
 ### Requirement: Metadata edit action
-The system MUST support a metadata edit action that can read and modify image metadata fields without changing the image format.
+The system MUST support an optional metadata edit action (when metadata support is enabled) that can read and modify image metadata fields without changing the image format.
 
 #### Scenario: Update metadata field
 - **WHEN** the user applies a metadata edit action that changes a field value

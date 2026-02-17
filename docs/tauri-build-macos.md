@@ -1,11 +1,10 @@
-# Tauri Build on macOS
+# Tauri Build on MacOS
 
-This document tracks macOS prerequisites and build steps for PICLR with Tauri v2.
+This document tracks MacOS prerequisites and build steps for PICLR with Tauri v2.
 
 ## Status
 
-- Validated end-to-end by project testing.
-- macOS validation was completed before Linux validation in this release cycle.
+- Validated on MacOS Tahoe 26.2 by manual testing.
 
 ## Core Toolchain
 
@@ -51,12 +50,12 @@ From repo root:
 cargo tauri build
 ```
 
-Expected output type on macOS typically includes:
+Expected output type on MacOS typically includes:
 
 - `.app` bundle
 - `.dmg` installer (if enabled in Tauri bundle config)
 
 ## Notes
 
-- Installing `cargo-tauri` does not replace Xcode CLT requirements; both are needed for Rust/native build toolchain support on macOS.
+- Installing `cargo-tauri` does not replace Xcode command-line tools requirements; both are needed for Rust/native build toolchain support on MacOS.
 - If signing/notarization is required, add Apple Developer certificate and notarization credentials to your CI/local signing flow.

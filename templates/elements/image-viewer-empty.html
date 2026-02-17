@@ -1,0 +1,11 @@
+<image-viewer-empty id="image-viewer">
+    <viewer-empty>
+        <button
+            type="button"
+            data-on:click="window.piclrOpenDirectoryPicker?.()"
+            data-attr="{ disabled: !$directorySelectEnabled, 'aria-disabled': !$directorySelectEnabled }"
+        >
+            Select Folder
+        </button>
+    </viewer-empty>
+</image-viewer-empty>

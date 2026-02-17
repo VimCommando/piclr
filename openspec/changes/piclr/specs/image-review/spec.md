@@ -29,11 +29,11 @@ The system MUST support ordering the review list by filesystem order and by conf
 - **THEN** the review list is reordered accordingly and the current selection remains valid
 
 ### Requirement: Single-image presentation
-The system MUST present exactly one image at a time to the user for review.
+The system MUST present one primary image at a time for review, while optionally showing partial previews of adjacent images to communicate next/previous navigation.
 
 #### Scenario: Viewing the current image
 - **WHEN** the user is in the viewing state
-- **THEN** the UI displays the currently selected image and its position in the list
+- **THEN** the UI displays one whole currently selected image and may show partial previous/next images as stack context
 
 ### Requirement: Preload adjacent images
 The system MUST preload the next image in the current review order to minimize navigation latency.
@@ -57,10 +57,10 @@ The system MUST allow navigation through the list without altering any image dec
 - **THEN** the current selection changes and no image decision state is modified
 
 ### Requirement: Jump to undecided images
-The system MUST allow jumping to the next or previous undecided image using Ctrl+Down and Ctrl+Up.
+The system MUST allow jumping to the next or previous undecided image using Shift+Down and Shift+Up.
 
 #### Scenario: Jump forward to the next undecided
-- **WHEN** the user presses Ctrl+Down
+- **WHEN** the user presses Shift+Down
 - **THEN** the selection moves to the nearest later image with an undecided state
 
 ### Requirement: Open new path

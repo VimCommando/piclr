@@ -644,6 +644,9 @@ async fn broadcast_patch(ctx: &AppContext, patch: UiPatch) {
 async fn build_patch_events(ctx: &AppContext, patch: UiPatch) -> Vec<Event> {
     let view = build_view(ctx).await;
     let mut events = Vec::new();
+    let rendered_ids = { ctx.rendered_stack_ids.read().await.clone() };
+    let needs_viewer_swap = (view.total == 0 && !rendered_ids.is_empty())
+        || (view.total > 0 && rendered_ids.is_empty());
 
     if patch.header {
         let html = HeaderTemplate { view: &view }.render().unwrap_or_default();
@@ -653,8 +656,12 @@ async fn build_patch_events(ctx: &AppContext, patch: UiPatch) -> Vec<Event> {
         events.push(patch.write_as_axum_sse_event());
     }
 
-    if patch.viewer {
-        let html = ImageViewerTemplate {}.render().unwrap_or_default();
+    if patch.viewer || needs_viewer_swap {
+        let html = if view.total > 0 {
+            ImageViewerTemplate {}.render().unwrap_or_default()
+        } else {
+            ImageViewerEmptyTemplate {}.render().unwrap_or_default()
+        };
         let patch = PatchElements::new(html)
             .selector("#image-viewer")
             .mode(ElementPatchMode::Outer);
@@ -662,8 +669,14 @@ async fn build_patch_events(ctx: &AppContext, patch: UiPatch) -> Vec<Event> {
     }
 
     if patch.stack {
-        events
-            .extend(build_stack_patch_events(ctx, &view, patch.viewer || patch.stack_reset).await);
+        if view.total > 0 {
+            events.extend(
+                build_stack_patch_events(ctx, &view, patch.viewer || patch.stack_reset).await,
+            );
+        } else {
+            let mut ids_guard = ctx.rendered_stack_ids.write().await;
+            ids_guard.clear();
+        }
     }
 
     if patch.modals {
@@ -1153,6 +1166,10 @@ struct HeaderTemplate<'a> {
 struct ImageViewerTemplate {}
 
 #[derive(Template)]
+#[template(path = "elements/image-viewer-empty.html")]
+struct ImageViewerEmptyTemplate {}
+
+#[derive(Template)]
 #[template(path = "elements/modal/queue.html")]
 struct QueueModalTemplate<'a> {
     view: &'a AppView,
@@ -1202,9 +1219,13 @@ fn render_active_modal(view: &AppView) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::{AppConfig, AppContext};
     use crate::domain::{
-        ActionConfig, ActionMapping, DecisionState, ImageMeta, SortDirection, SortKey, SortMode,
+        ActionConfig, ActionMapping, AppState, DecisionState, ImageMeta, ModalView, SortDirection,
+        SortKey, SortMode,
     };
+    use axum::http::StatusCode;
+    use axum::response::IntoResponse;
     use std::path::PathBuf;
 
     fn sample_image(id: u64, path: &str, original_order: usize) -> ImageEntry {
@@ -1244,6 +1265,25 @@ mod tests {
             Some(PathBuf::from("/tmp")),
         );
         state
+    }
+
+    fn sample_machine(queue_mode: bool) -> AppState {
+        let mapping = ActionMapping {
+            left: ActionConfig::Delete,
+            right: ActionConfig::Keep,
+        };
+        let sort_mode = SortMode {
+            key: SortKey::Filesystem,
+            direction: SortDirection::Asc,
+        };
+        let mut machine = AppState::new(queue_mode, mapping, sort_mode);
+        machine.transition_to_scanning();
+        machine.transition_to_ready(
+            vec![sample_image(1, "/tmp/a.jpg", 0)],
+            Some(PathBuf::from("/tmp")),
+        );
+        machine.transition_to_viewing();
+        machine
     }
 
     #[test]
@@ -1296,5 +1336,43 @@ mod tests {
         let single_entry_html = render_image_card(single_entry_card);
 
         assert!(hydrated_html.contains(&single_entry_html));
+    }
+
+    #[tokio::test]
+    async fn startup_without_path_renders_select_folder_empty_state_without_modal() {
+        let mapping = ActionMapping {
+            left: ActionConfig::Delete,
+            right: ActionConfig::Keep,
+        };
+        let sort_mode = SortMode {
+            key: SortKey::Filesystem,
+            direction: SortDirection::Asc,
+        };
+        let state = AppState::new(true, mapping, sort_mode);
+        let ctx = AppContext::new(state, AppConfig::default());
+
+        let axum::response::Html(html) = render_full_page(&ctx).await;
+        assert!(html.contains("Select Folder"));
+        assert!(html.contains("<modal-none id=\"modal\"></modal-none>"));
+    }
+
+    #[tokio::test]
+    async fn apply_shows_delete_confirmation_when_destructive_delete_enabled() {
+        let mut state = sample_machine(true);
+        state.state_mut().images[0].queued_action = Some(ActionConfig::Delete);
+
+        let config = AppConfig {
+            destructive_delete: true,
+            ..AppConfig::default()
+        };
+        let ctx = AppContext::new(state, config);
+
+        let response = cmd_apply(State(WebState { ctx: ctx.clone() }))
+            .await
+            .into_response();
+
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        let guard = ctx.state.read().await;
+        assert_eq!(guard.state().active_modal, Some(ModalView::DeleteConfirm));
     }
 }

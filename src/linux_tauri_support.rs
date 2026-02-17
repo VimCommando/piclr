@@ -124,11 +124,14 @@ fn library_exists_in_paths(lib_names: &[&str], search_dirs: &[&str]) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "linux")]
+    use super::library_exists_in_paths;
     use super::{
-        GTK3_LIB, WEBKIT_LIBS, library_exists_in_paths, linux_tauri_prereq_error,
-        validate_linux_tauri_prerequisites,
+        GTK3_LIB, WEBKIT_LIBS, linux_tauri_prereq_error, validate_linux_tauri_prerequisites,
     };
+    #[cfg(target_os = "linux")]
     use std::fs;
+    #[cfg(target_os = "linux")]
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -159,6 +162,7 @@ mod tests {
         assert!(message.contains("Arch-family"));
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn library_path_probe_detects_existing_files() {
         let unique = SystemTime::now()
@@ -172,7 +176,10 @@ mod tests {
         fs::write(&lib_path, "").expect("write fake shared object");
 
         let temp_dir_str = temp_dir.to_string_lossy();
-        assert!(library_exists_in_paths(&[lib_name], &[temp_dir_str.as_ref()]));
+        assert!(library_exists_in_paths(
+            &[lib_name],
+            &[temp_dir_str.as_ref()]
+        ));
 
         let _ = fs::remove_file(lib_path);
         let _ = fs::remove_dir_all(temp_dir);

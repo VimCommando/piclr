@@ -94,10 +94,10 @@
             if (evt.key === 'Escape') { evt.preventDefault(); @post('/cmd/close') }
         "
     >
-        {% include "elements/modal/none.html" %}
-        {% include "elements/header.html" %}
-        {% include "elements/image-viewer.html" %}
-        {% include "elements/footer.html" %}
+            {% include "elements/modal/none.html" %}
+            {% include "elements/header.html" %}
+            {% include "elements/image-viewer-empty.html" %}
+            {% include "elements/footer.html" %}
         <input
             id="directory-picker"
             type="file"

@@ -49,9 +49,9 @@ The system MUST allow running as a standalone loopback web app and MUST allow an
 - **WHEN** Tauri is not enabled
 - **THEN** the user can open the loopback URL in a browser and use the app
 
-### Requirement: Directory selection when no path is provided
-The system MUST prompt for a directory when started without a CLI path argument.
+### Requirement: Empty-state folder selection
+The system MUST present a clear empty-state call to action when no images are available in the currently selected directory.
 
-#### Scenario: Start without path argument
-- **WHEN** the user runs `piclr` with no arguments
-- **THEN** the UI presents a directory selection modal before scanning
+#### Scenario: No images available
+- **WHEN** the selected directory has zero supported images
+- **THEN** the main image viewer shows a centered `Select Folder` button to pick a different directory

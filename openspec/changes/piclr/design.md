@@ -48,7 +48,7 @@ State is in-memory for each run. The frontend should be as stateless as possible
 
 **Sorting and navigation**
 - Decision: Default filesystem order, with optional sorting by created_at, last_modified, or alphabetical, each asc/desc. Up/Down navigates without changing state; Left/Right applies actions.
-- Decision: Ctrl+Up and Ctrl+Down jump to the previous/next undecided image.
+- Decision: Shift+Up and Shift+Down jump to the previous/next undecided image, with Shift+K and Shift+J as secondary bindings.
 - Alternatives: skip-only undecided items or random shuffle.
 - Rationale: Predictable navigation and reproducible ordering.
 
@@ -78,7 +78,7 @@ State is in-memory for each run. The frontend should be as stateless as possible
 - Rationale: Matches modern photo libraries and avoids confusing rotations.
 
 **Metadata edits**
-- Decision: Support a metadata edit action that updates metadata fields without changing image formats.
+- Decision: Support an optional metadata edit action (feature-gated) that updates metadata fields without changing image formats.
 - Alternatives: read-only metadata or external editing tools.
 - Rationale: Enables lightweight tagging and corrections during sorting.
 
