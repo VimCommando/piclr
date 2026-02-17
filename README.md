@@ -163,16 +163,22 @@ You can also use the footer/header buttons for the same commands.
 
 ## DATA Stack Example
 
-This project is an example application for the Datastar Askama Tauri Axum (DATA) Stack:
+I'm using PICLR as a full end-to-end example of the [DATA
+Stack](docs/data-stack.md):
 
-- Datastar for reactive, server-driven browser updates
-- Askama for server-side HTML templating
-- Tauri as a wrapper to run as a native desktop application
-- Axum as the local web server and command surface
+- **Datastar** - Event-driven hypermedia interface
+- **Askama** - Compile-time HTML templating
+- **Tauri** - Native desktop application wrapper
+- **Axum** - Bridging HTTP interface and state management
 
-## Built with OpenAI Codex
+## Built with OpenAI Codex and OpenSpec
 
-PICLR was developed with Codex as an exercise to push its limits in an emerging technology stack.
+PICLR was developed with Codex as an exercise to push its limits in an emerging
+technology stack.
+
+It also leverages the
+[OpenSpec](https://github.com/Fission-AI/OpenSpec/) framework for AI-assisted
+development.
 
 ## License
 
