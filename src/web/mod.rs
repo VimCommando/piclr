@@ -14,7 +14,9 @@ use mime_guess::MimeGuess;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use tokio::sync::broadcast;
+#[cfg(test)]
+use std::sync::{Arc, OnceLock};
+use tokio::sync::broadcast::error::RecvError;
 use tracing::warn;
 
 use crate::app::AppContext;
@@ -23,6 +25,10 @@ use crate::fs::{
     FsConfig, apply_action, apply_action_with_undo, apply_undo_action, load_image_bytes,
     scan_images,
 };
+
+#[cfg(test)]
+static APPLY_DECISION_BEFORE_FS_BARRIER: OnceLock<tokio::sync::Mutex<Option<Arc<tokio::sync::Barrier>>>> =
+    OnceLock::new();
 
 #[derive(Clone)]
 pub struct WebState {
@@ -106,7 +112,7 @@ pub fn router(ctx: AppContext) -> Router {
         .route("/cmd/help", post(cmd_help))
         .route("/cmd/select/{id}", post(cmd_select))
         .route("/cmd/close", post(cmd_close))
-        .route("/events", patch(events))
+        .route("/events", get(events))
         .route("/image/{id}", get(image))
         .route("/assets/datastar.js", get(datastar_js))
         .route("/assets/app.css", get(app_css))
@@ -431,59 +437,90 @@ async fn apply_decision(ctx: AppContext, side: DecisionSide) {
         )
     };
 
-    let mut guard = ctx.state.write().await;
-    let outcome = guard.state_mut().apply_decision(side);
-    let immediate = outcome.as_ref().map(|o| o.immediate).unwrap_or(false);
-    let changed_image_id = outcome.as_ref().map(|o| o.image_id);
-    let mut undo_entry = outcome
-        .as_ref()
-        .map(|outcome| crate::domain::undo::UndoEntry {
-            image_id: outcome.image_id,
-            previous_decision: outcome.previous_decision.clone(),
-            previous_queue: outcome.previous_queue.clone(),
-            previous_cursor: outcome.cursor_before,
-            undo_action: None,
-        });
+    let (changed_image_id, mut undo_entry, immediate_apply) = {
+        let mut guard = ctx.state.write().await;
+        let outcome = guard.state_mut().apply_decision(side);
+        let changed_image_id = outcome.as_ref().map(|o| o.image_id);
+        let mut undo_entry = outcome
+            .as_ref()
+            .map(|outcome| crate::domain::undo::UndoEntry {
+                image_id: outcome.image_id,
+                previous_decision: outcome.previous_decision.clone(),
+                previous_queue: outcome.previous_queue.clone(),
+                previous_cursor: outcome.cursor_before,
+                undo_action: None,
+            });
 
-    if immediate {
-        if let (Some(root_dir), Some(outcome), Some(undo)) =
+        let immediate_apply = if let (Some(root_dir), Some(outcome), Some(undo)) =
             (root_dir, outcome.as_ref(), undo_entry.as_mut())
         {
-            let config = FsConfig::new(root_dir, destructive);
-            let image = guard
-                .state()
-                .images
-                .iter()
-                .find(|image| image.id == outcome.image_id)
-                .cloned();
-            if let Some(image) = image {
-                match apply_action_with_undo(
-                    &config,
-                    &image.path,
-                    &outcome.action,
-                    image.rename_sequence,
-                )
-                .await
-                {
-                    Ok(action) => {
-                        undo.undo_action = action;
-                    }
-                    Err(err) => {
-                        warn!(%err, path = %image.path.display(), "Failed to apply action");
-                    }
+            if outcome.immediate {
+                let config = FsConfig::new(root_dir, destructive);
+                let image = guard
+                    .state()
+                    .images
+                    .iter()
+                    .find(|image| image.id == outcome.image_id)
+                    .cloned();
+                image.map(|image| {
+                    (
+                        config,
+                        image.path,
+                        outcome.action.clone(),
+                        image.rename_sequence,
+                        undo.image_id,
+                    )
+                })
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        (changed_image_id, undo_entry, immediate_apply)
+    };
+
+    if let (Some((config, image_path, action, rename_sequence, undo_image_id)), Some(undo)) =
+        (immediate_apply, undo_entry.as_mut())
+    {
+        #[cfg(test)]
+        wait_for_apply_decision_test_hook().await;
+        match apply_action_with_undo(&config, &image_path, &action, rename_sequence).await {
+            Ok(action) => {
+                if undo.image_id == undo_image_id {
+                    undo.undo_action = action;
                 }
+            }
+            Err(err) => {
+                warn!(%err, path = %image_path.display(), "Failed to apply action");
             }
         }
     }
 
     if let Some(undo) = undo_entry {
+        let mut guard = ctx.state.write().await;
         guard.state_mut().record_undo(undo);
     }
 
-    drop(guard);
     broadcast_patch(&ctx, navigation_patch(&ctx).await).await;
     if let Some(image_id) = changed_image_id {
         patch_stack_card_if_visible(&ctx, image_id).await;
+    }
+}
+
+#[cfg(test)]
+async fn set_apply_decision_test_barrier(barrier: Option<Arc<tokio::sync::Barrier>>) {
+    let hook = APPLY_DECISION_BEFORE_FS_BARRIER.get_or_init(|| tokio::sync::Mutex::new(None));
+    let mut guard = hook.lock().await;
+    *guard = barrier;
+}
+
+#[cfg(test)]
+async fn wait_for_apply_decision_test_hook() {
+    let hook = APPLY_DECISION_BEFORE_FS_BARRIER.get_or_init(|| tokio::sync::Mutex::new(None));
+    let barrier = { hook.lock().await.clone() };
+    if let Some(barrier) = barrier {
+        barrier.wait().await;
     }
 }
 
@@ -611,7 +648,7 @@ async fn events(State(state): State<WebState>) -> impl IntoResponse {
     let mut rx = ctx.sse_tx.subscribe();
     Sse::new(stream_fn(
         move |mut yielder: Yielder<Result<Event, Infallible>>| async move {
-            let initial_events = build_patch_events(&ctx, UiPatch::ALL).await;
+            let initial_events = build_full_resync_events(&ctx).await;
             for event in initial_events {
                 yielder.yield_item(Ok(event)).await;
             }
@@ -621,8 +658,15 @@ async fn events(State(state): State<WebState>) -> impl IntoResponse {
                     Ok(event) => {
                         yielder.yield_item(Ok(event)).await;
                     }
-                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                    Err(broadcast::error::RecvError::Closed) => break,
+                    Err(err) => {
+                        if let Some(resync_events) = stream_recovery_events(&ctx, err).await {
+                            for event in resync_events {
+                                yielder.yield_item(Ok(event)).await;
+                            }
+                            continue;
+                        }
+                        break;
+                    }
                 }
             }
         },
@@ -638,6 +682,17 @@ async fn broadcast_patch(ctx: &AppContext, patch: UiPatch) {
     let events = build_patch_events(ctx, patch).await;
     for event in events {
         let _ = ctx.sse_tx.send(event);
+    }
+}
+
+async fn build_full_resync_events(ctx: &AppContext) -> Vec<Event> {
+    build_patch_events(ctx, UiPatch::ALL).await
+}
+
+async fn stream_recovery_events(ctx: &AppContext, err: RecvError) -> Option<Vec<Event>> {
+    match err {
+        RecvError::Lagged(_) => Some(build_full_resync_events(ctx).await),
+        RecvError::Closed => None,
     }
 }
 
@@ -1224,9 +1279,13 @@ mod tests {
         ActionConfig, ActionMapping, AppState, DecisionState, ImageMeta, ModalView, SortDirection,
         SortKey, SortMode,
     };
+    use axum::body::Body;
+    use axum::http::Request;
     use axum::http::StatusCode;
     use axum::response::IntoResponse;
     use std::path::PathBuf;
+    use tower::util::ServiceExt;
+    use tokio::time::{Duration, timeout};
 
     fn sample_image(id: u64, path: &str, original_order: usize) -> ImageEntry {
         ImageEntry {
@@ -1374,5 +1433,84 @@ mod tests {
         assert_eq!(response.status(), StatusCode::NO_CONTENT);
         let guard = ctx.state.read().await;
         assert_eq!(guard.state().active_modal, Some(ModalView::DeleteConfirm));
+    }
+
+    #[tokio::test]
+    async fn lagged_stream_recovery_builds_full_resync_events() {
+        let ctx = AppContext::new(sample_machine(true), AppConfig::default());
+
+        let recovery = stream_recovery_events(&ctx, RecvError::Lagged(2))
+            .await
+            .expect("lagged streams must resync");
+        let full = build_full_resync_events(&ctx).await;
+
+        assert!(!recovery.is_empty());
+        assert_eq!(recovery.len(), full.len());
+    }
+
+    #[tokio::test]
+    async fn rendered_shortcuts_use_non_canceling_posts_and_buttons_remain_simple_posts() {
+        let ctx = AppContext::new(sample_machine(true), AppConfig::default());
+        let axum::response::Html(html) = render_full_page(&ctx).await;
+
+        assert!(html.contains("@get('/events', { openWhenHidden: true })"));
+        assert!(html.contains(
+            "@post('/cmd/left', { requestCancellation: 'none' })"
+        ));
+        assert!(html.contains(
+            "@post('/cmd/next', { requestCancellation: 'none' })"
+        ));
+        assert!(html.contains("<button data-on:click=\"@post('/cmd/left')\">⬅️ Left</button>"));
+    }
+
+    #[tokio::test]
+    async fn events_endpoint_accepts_get_and_rejects_patch() {
+        let ctx = AppContext::new(sample_machine(true), AppConfig::default());
+        let app = router(ctx);
+
+        let get_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/events")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(get_response.status(), StatusCode::OK);
+
+        let patch_response = app
+            .oneshot(
+                Request::builder()
+                    .method("PATCH")
+                    .uri("/events")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(patch_response.status(), StatusCode::METHOD_NOT_ALLOWED);
+    }
+
+    #[tokio::test]
+    async fn apply_decision_releases_state_lock_before_immediate_fs_work() {
+        let ctx = AppContext::new(sample_machine(false), AppConfig::default());
+        let barrier = Arc::new(tokio::sync::Barrier::new(2));
+        set_apply_decision_test_barrier(Some(barrier.clone())).await;
+
+        let task_ctx = ctx.clone();
+        let apply_task = tokio::spawn(async move {
+            apply_decision(task_ctx, DecisionSide::Left).await;
+        });
+
+        barrier.wait().await;
+        let lock_result = timeout(Duration::from_millis(250), ctx.state.write()).await;
+        assert!(lock_result.is_ok(), "state write lock should be available");
+        drop(lock_result.unwrap());
+
+        set_apply_decision_test_barrier(None).await;
+        let _ = apply_task.await;
     }
 }

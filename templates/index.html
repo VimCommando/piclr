@@ -71,27 +71,27 @@
     </head>
     <body
         id="app"
-        data-init="@patch('/events', { openWhenHidden: true })"
+        data-init="@get('/events', { openWhenHidden: true })"
         data-on:keydown="
-            if (evt.key === 'ArrowLeft') { evt.preventDefault(); @post('/cmd/left') }
-            if (evt.key === 'ArrowRight') { evt.preventDefault(); @post('/cmd/right') }
-            if (evt.key === 'h' || evt.key === 'H') { evt.preventDefault(); @post('/cmd/left') }
-            if (evt.key === 'l' || evt.key === 'L') { evt.preventDefault(); @post('/cmd/right') }
-            if (evt.key === 'j' || evt.key === 'J') { evt.preventDefault(); @post('/cmd/next') }
-            if (evt.key === 'k' || evt.key === 'K') { evt.preventDefault(); @post('/cmd/prev') }
-            if (evt.key === 'ArrowUp' && evt.shiftKey) { evt.preventDefault(); @post('/cmd/jump-prev') }
-            if (evt.key === 'ArrowDown' && evt.shiftKey) { evt.preventDefault(); @post('/cmd/jump-next') }
-            if (evt.key === 'J' && evt.shiftKey) { evt.preventDefault(); @post('/cmd/jump-next') }
-            if (evt.key === 'K' && evt.shiftKey) { evt.preventDefault(); @post('/cmd/jump-prev') }
-            if (evt.key === 'ArrowUp' && !evt.shiftKey) { evt.preventDefault(); @post('/cmd/prev') }
-            if (evt.key === 'ArrowDown' && !evt.shiftKey) { evt.preventDefault(); @post('/cmd/next') }
+            if (evt.key === 'ArrowLeft') { evt.preventDefault(); @post('/cmd/left', { requestCancellation: 'none' }) }
+            if (evt.key === 'ArrowRight') { evt.preventDefault(); @post('/cmd/right', { requestCancellation: 'none' }) }
+            if (evt.key === 'h' || evt.key === 'H') { evt.preventDefault(); @post('/cmd/left', { requestCancellation: 'none' }) }
+            if (evt.key === 'l' || evt.key === 'L') { evt.preventDefault(); @post('/cmd/right', { requestCancellation: 'none' }) }
+            if (evt.key === 'j' || evt.key === 'J') { evt.preventDefault(); @post('/cmd/next', { requestCancellation: 'none' }) }
+            if (evt.key === 'k' || evt.key === 'K') { evt.preventDefault(); @post('/cmd/prev', { requestCancellation: 'none' }) }
+            if (evt.key === 'ArrowUp' && evt.shiftKey) { evt.preventDefault(); @post('/cmd/jump-prev', { requestCancellation: 'none' }) }
+            if (evt.key === 'ArrowDown' && evt.shiftKey) { evt.preventDefault(); @post('/cmd/jump-next', { requestCancellation: 'none' }) }
+            if (evt.key === 'J' && evt.shiftKey) { evt.preventDefault(); @post('/cmd/jump-next', { requestCancellation: 'none' }) }
+            if (evt.key === 'K' && evt.shiftKey) { evt.preventDefault(); @post('/cmd/jump-prev', { requestCancellation: 'none' }) }
+            if (evt.key === 'ArrowUp' && !evt.shiftKey) { evt.preventDefault(); @post('/cmd/prev', { requestCancellation: 'none' }) }
+            if (evt.key === 'ArrowDown' && !evt.shiftKey) { evt.preventDefault(); @post('/cmd/next', { requestCancellation: 'none' }) }
             if ((evt.key === 'o' || evt.key === 'O') && evt.ctrlKey) { evt.preventDefault(); window.piclrOpenDirectoryPicker?.() }
-            if (evt.key === 'A' && evt.shiftKey) { evt.preventDefault(); @post('/cmd/apply') }
-            if (evt.key === 'u' || evt.key === 'U') { evt.preventDefault(); @post('/cmd/undo') }
-            if (evt.key === 'q' || evt.key === 'Q') { evt.preventDefault(); @post('/cmd/queue/show') }
-            if (evt.key === 'i' || evt.key === 'I') { evt.preventDefault(); @post('/cmd/files/show') }
-            if (evt.key === '?') { evt.preventDefault(); @post('/cmd/help') }
-            if (evt.key === 'Escape') { evt.preventDefault(); @post('/cmd/close') }
+            if (evt.key === 'A' && evt.shiftKey) { evt.preventDefault(); @post('/cmd/apply', { requestCancellation: 'none' }) }
+            if (evt.key === 'u' || evt.key === 'U') { evt.preventDefault(); @post('/cmd/undo', { requestCancellation: 'none' }) }
+            if (evt.key === 'q' || evt.key === 'Q') { evt.preventDefault(); @post('/cmd/queue/show', { requestCancellation: 'none' }) }
+            if (evt.key === 'i' || evt.key === 'I') { evt.preventDefault(); @post('/cmd/files/show', { requestCancellation: 'none' }) }
+            if (evt.key === '?') { evt.preventDefault(); @post('/cmd/help', { requestCancellation: 'none' }) }
+            if (evt.key === 'Escape') { evt.preventDefault(); @post('/cmd/close', { requestCancellation: 'none' }) }
         "
     >
             {% include "elements/modal/none.html" %}

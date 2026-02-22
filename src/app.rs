@@ -46,7 +46,9 @@ pub struct AppContext {
 
 impl AppContext {
     pub fn new(state: AppState, config: AppConfig) -> Self {
-        let (sse_tx, _) = broadcast::channel(64);
+        // Local/Tauri runs can burst command updates (keyboard repeats), so use a
+        // wider channel to reduce lag probability before explicit resync handling.
+        let (sse_tx, _) = broadcast::channel(256);
         Self {
             state: Arc::new(RwLock::new(state)),
             config,

@@ -16,11 +16,15 @@ The system MUST accept an optional directory path when invoked from the CLI and 
 - **THEN** the initial scan uses `~/images`
 
 ### Requirement: Server-driven UI with CQRS
-The system MUST accept command requests from the UI and respond with server-driven UI updates.
+The system MUST accept command requests from the UI and respond with server-driven UI updates. Command endpoints under `/cmd/*` MUST return HTTP 204 for accepted commands, and read-model updates MUST be delivered through the Datastar stream endpoint at `GET /events`.
 
 #### Scenario: Command updates UI
 - **WHEN** the user submits a left decision command
-- **THEN** the server updates state and returns UI updates via the Datastar stream
+- **THEN** the server updates state, responds with HTTP 204, and emits corresponding UI updates via the Datastar stream
+
+#### Scenario: Stream endpoint uses GET
+- **WHEN** the UI initializes its Datastar event stream connection
+- **THEN** it opens `GET /events` and receives server-sent patch events
 
 ### Requirement: Minimal frontend state
 The system MUST keep frontend state minimal and derive UI from server state. For image-stack rendering, the server MUST provide one queue-backed projection object as the canonical render source.
@@ -71,4 +75,3 @@ The system MUST support selective `PatchElement` updates for individual image-st
 #### Scenario: Patch a single entry after queue update
 - **WHEN** a command changes one queued image entry
 - **THEN** the server emits a `PatchElement` update for only that entry without requiring a full image-stack re-render
-
