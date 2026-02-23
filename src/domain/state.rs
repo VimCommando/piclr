@@ -449,9 +449,11 @@ impl AppStateInner {
             return false;
         }
         self.activate_queue_focus();
-        let current_pos = self
-            .selected_queue_image_id
-            .and_then(|id| self.queued_ids.iter().position(|queued_id| *queued_id == id));
+        let current_pos = self.selected_queue_image_id.and_then(|id| {
+            self.queued_ids
+                .iter()
+                .position(|queued_id| *queued_id == id)
+        });
         let next_pos = match current_pos {
             Some(pos) if pos + 1 < self.queued_ids.len() => pos + 1,
             Some(_) => return false,
@@ -466,9 +468,11 @@ impl AppStateInner {
             return false;
         }
         self.activate_queue_focus();
-        let current_pos = self
-            .selected_queue_image_id
-            .and_then(|id| self.queued_ids.iter().position(|queued_id| *queued_id == id));
+        let current_pos = self.selected_queue_image_id.and_then(|id| {
+            self.queued_ids
+                .iter()
+                .position(|queued_id| *queued_id == id)
+        });
         let prev_pos = match current_pos {
             Some(pos) if pos > 0 => pos - 1,
             Some(_) => return false,
@@ -497,7 +501,11 @@ impl AppStateInner {
     }
 
     pub fn select_queue_item_by_id(&mut self, image_id: u64) -> bool {
-        if !self.queued_ids.iter().any(|queued_id| *queued_id == image_id) {
+        if !self
+            .queued_ids
+            .iter()
+            .any(|queued_id| *queued_id == image_id)
+        {
             return false;
         }
         self.activate_queue_focus();
@@ -505,7 +513,9 @@ impl AppStateInner {
         true
     }
 
-    pub fn queue_selected_item_for_apply(&self) -> Option<(u64, PathBuf, ActionConfig, Option<u64>)> {
+    pub fn queue_selected_item_for_apply(
+        &self,
+    ) -> Option<(u64, PathBuf, ActionConfig, Option<u64>)> {
         let selected = self.selected_queue_image_id?;
         let image = self.images.iter().find(|image| image.id == selected)?;
         let action = image.queued_action.clone()?;
@@ -539,7 +549,11 @@ impl AppStateInner {
             Some(id) => id,
             None => return false,
         };
-        if !self.queued_ids.iter().any(|queued_id| *queued_id == selected) {
+        if !self
+            .queued_ids
+            .iter()
+            .any(|queued_id| *queued_id == selected)
+        {
             return false;
         }
         let action = match side {
@@ -572,7 +586,11 @@ impl AppStateInner {
         true
     }
 
-    pub fn apply_selected_queue_action_result(&mut self, image_id: u64, action: &ActionConfig) -> bool {
+    pub fn apply_selected_queue_action_result(
+        &mut self,
+        image_id: u64,
+        action: &ActionConfig,
+    ) -> bool {
         let image_idx = match self.images.iter().position(|image| image.id == image_id) {
             Some(idx) => idx,
             None => return false,
@@ -598,7 +616,8 @@ impl AppStateInner {
                     }
                 })
                 .collect();
-            self.nav_entries.retain(|entry| entry.image_id != Some(image_id));
+            self.nav_entries
+                .retain(|entry| entry.image_id != Some(image_id));
             if self.order.is_empty() {
                 self.cursor = 0;
             } else if self.cursor >= self.order.len() {
@@ -811,15 +830,20 @@ impl AppStateInner {
         }
         let selected_present = self
             .selected_queue_image_id
-            .map(|selected| self.queued_ids.iter().any(|queued_id| *queued_id == selected))
+            .map(|selected| {
+                self.queued_ids
+                    .iter()
+                    .any(|queued_id| *queued_id == selected)
+            })
             .unwrap_or(false);
         if selected_present {
             return;
         }
-        let from_current = self
-            .current()
-            .map(|image| image.id)
-            .filter(|current_id| self.queued_ids.iter().any(|queued_id| queued_id == current_id));
+        let from_current = self.current().map(|image| image.id).filter(|current_id| {
+            self.queued_ids
+                .iter()
+                .any(|queued_id| queued_id == current_id)
+        });
         self.selected_queue_image_id = from_current.or_else(|| self.queued_ids.front().copied());
     }
 

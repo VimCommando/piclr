@@ -1,7 +1,14 @@
+use crate::app::AppContext;
+use crate::domain::{
+    ActionConfig, DecisionSide, ImageEntry, ModalView, NavEntryKind, SortDirection, SortKey,
+    SortMode,
+};
+use crate::fs::{
+    FsConfig, apply_action, apply_action_with_undo, load_image_bytes, scan_directories, scan_images,
+};
 use askama::Template;
 use asynk_strim::{Yielder, stream_fn};
 use axum::Router;
-use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::sse::{Event, KeepAlive};
@@ -9,10 +16,8 @@ use axum::response::{Html, IntoResponse, Response, Sse};
 use axum::routing::{get, patch, post};
 use bytes::Bytes;
 use core::convert::Infallible;
-use datastar::axum::ReadSignals;
 use datastar::prelude::{ElementPatchMode, PatchElements, PatchSignals};
 use mime_guess::MimeGuess;
-use serde::Deserialize;
 use std::collections::HashSet;
 use std::path::{Component, PathBuf};
 #[cfg(test)]
@@ -20,15 +25,7 @@ use std::sync::{Arc, OnceLock};
 use tokio::sync::broadcast::error::RecvError;
 use tracing::warn;
 
-use crate::app::AppContext;
-use crate::domain::{
-    ActionConfig, DecisionSide, ImageEntry, ModalView, NavEntryKind, SortDirection, SortKey,
-    SortMode,
-};
-use crate::fs::{
-    FsConfig, apply_action, apply_action_with_undo, apply_undo_action, load_image_bytes,
-    scan_directories, scan_images,
-};
+mod cmd;
 
 #[cfg(test)]
 static APPLY_DECISION_BEFORE_FS_BARRIER: OnceLock<
@@ -113,392 +110,75 @@ pub fn router(ctx: AppContext) -> Router {
     let state = WebState { ctx };
     Router::new()
         .route("/", get(index))
-        .route("/cmd/left", post(cmd_left))
-        .route("/cmd/right", post(cmd_right))
-        .route("/cmd/left-image", post(cmd_left_image))
-        .route("/cmd/right-image", post(cmd_right_image))
-        .route("/cmd/next", post(cmd_next))
-        .route("/cmd/prev", post(cmd_prev))
-        .route("/cmd/jump-next", post(cmd_jump_next))
-        .route("/cmd/jump-prev", post(cmd_jump_prev))
-        .route("/cmd/home", post(cmd_home))
-        .route("/cmd/end", post(cmd_end))
-        .route("/cmd/undo", post(cmd_undo))
-        .route("/cmd/apply", post(cmd_apply))
-        .route("/cmd/apply/request", post(cmd_apply_request))
-        .route("/cmd/apply-confirm", post(cmd_apply_confirm))
-        .route("/cmd/queue/reset", post(cmd_reset_queue))
-        .route("/cmd/queue/prev", post(cmd_queue_prev))
-        .route("/cmd/queue/next", post(cmd_queue_next))
-        .route("/cmd/queue/select/{id}", post(cmd_queue_select))
-        .route("/cmd/queue/apply-selected", post(cmd_queue_apply_selected))
-        .route("/cmd/queue/remove-selected", post(cmd_queue_remove_selected))
-        .route("/cmd/sidebar/toggle", post(cmd_toggle_sidebar))
-        .route("/cmd/sidebar/root/select", post(cmd_sidebar_root_select))
-        .route("/cmd/sidebar/open", post(cmd_sidebar_open))
-        .route("/cmd/sidebar/sort/{mode}", post(cmd_sidebar_sort))
-        .route("/cmd/sidebar/open-parent", post(cmd_sidebar_open_parent))
-        .route("/cmd/sidebar/rename", patch(cmd_sidebar_rename))
-        .route("/cmd/sidebar/delete", post(cmd_sidebar_delete_request))
+        .route("/assets/app.css", get(app_css))
+        .route("/assets/datastar.js", get(datastar_js))
+        .route("/cmd/apply", post(cmd::queue::apply))
+        .route("/cmd/apply-confirm", post(cmd::queue::apply_confirm))
+        .route("/cmd/apply/request", post(cmd::queue::apply_request))
+        .route("/cmd/close", post(cmd::close))
+        .route("/cmd/end", post(cmd::end))
+        .route("/cmd/help", post(cmd::help))
+        .route("/cmd/home", post(cmd::home))
+        .route("/cmd/image/left", post(cmd::image::left))
+        .route("/cmd/image/right", post(cmd::image::right))
+        .route("/cmd/jump-next", post(cmd::jump_next))
+        .route("/cmd/jump-prev", post(cmd::jump_prev))
+        .route("/cmd/left", post(cmd::left))
+        .route("/cmd/next", post(cmd::next))
+        .route("/cmd/prev", post(cmd::prev))
         .route(
-            "/cmd/sidebar/delete/confirm",
-            post(cmd_sidebar_delete_confirm),
+            "/cmd/queue/apply-selected",
+            post(cmd::queue::apply_selected),
+        )
+        .route("/cmd/queue/next", post(cmd::queue::next))
+        .route("/cmd/queue/prev", post(cmd::queue::prev))
+        .route(
+            "/cmd/queue/remove-selected",
+            post(cmd::queue::remove_selected),
+        )
+        .route("/cmd/queue/reset", post(cmd::queue::reset))
+        .route("/cmd/queue/select/{id}", post(cmd::queue::select))
+        .route("/cmd/queue/show", post(cmd::queue::show))
+        .route("/cmd/right", post(cmd::right))
+        .route("/cmd/select/{id}", post(cmd::select))
+        .route(
+            "/cmd/sidebar/change-directory/apply",
+            post(cmd::files::change_directory_apply),
         )
         .route(
             "/cmd/sidebar/change-directory/cancel",
-            post(cmd_sidebar_change_directory_cancel),
-        )
-        .route(
-            "/cmd/sidebar/change-directory/apply",
-            post(cmd_sidebar_change_directory_apply),
+            post(cmd::files::change_directory_cancel),
         )
         .route(
             "/cmd/sidebar/change-directory/clear",
-            post(cmd_sidebar_change_directory_clear),
+            post(cmd::files::change_directory_clear),
         )
-        .route("/cmd/queue/show", post(cmd_show_queue))
-        .route("/cmd/help", post(cmd_help))
-        .route("/cmd/select/{id}", post(cmd_select))
-        .route("/cmd/sidebar/open-entry/{id}", post(cmd_sidebar_open_entry))
-        .route("/cmd/close", post(cmd_close))
+        .route("/cmd/sidebar/delete", post(cmd::files::delete_request))
+        .route(
+            "/cmd/sidebar/delete/confirm",
+            post(cmd::files::delete_confirm),
+        )
+        .route("/cmd/sidebar/open", post(cmd::files::open))
+        .route(
+            "/cmd/sidebar/open-entry/{id}",
+            post(cmd::files::open_entry),
+        )
+        .route("/cmd/sidebar/open-parent", post(cmd::files::open_parent))
+        .route("/cmd/sidebar/rename", patch(cmd::files::rename))
+        .route("/cmd/sidebar/root/select", post(cmd::files::root_select))
+        .route("/cmd/sidebar/sort/{mode}", post(cmd::files::sort))
+        .route("/cmd/sidebar/toggle", post(cmd::files::toggle))
+        .route("/cmd/undo", post(cmd::undo))
         .route("/events", get(events))
-        .route("/image/{id}", get(image))
-        .route("/image/by-path/{rel}", get(image_by_rel_path))
         .route("/favicon.ico", get(favicon_ico))
-        .route("/assets/datastar.js", get(datastar_js))
-        .route("/assets/app.css", get(app_css))
+        .route("/image/by-path/{rel}", get(image_by_rel_path))
+        .route("/image/{id}", get(image))
         .with_state(state)
 }
 
 async fn index(State(state): State<WebState>) -> Html<String> {
     let ctx = state.ctx.clone();
     render_full_page(&ctx).await
-}
-
-async fn cmd_left(State(state): State<WebState>) -> impl IntoResponse {
-    let (selected_directory, target_parent) = {
-        let mut guard = state.ctx.state.write().await;
-        let app_state = guard.state_mut();
-        app_state.close_directory_actions();
-        let selected_directory = app_state.selected_entry_is_directory();
-        let target_parent = if selected_directory {
-            app_state.navigate_to_parent_directory()
-        } else {
-            None
-        };
-        (selected_directory, target_parent)
-    };
-    if let Some(path) = target_parent {
-        attempt_directory_change(&state.ctx, path).await;
-    } else if selected_directory {
-        let ctx = state.ctx.clone();
-        broadcast_viewer_and_signals(&ctx).await;
-    } else {
-        let ctx = state.ctx.clone();
-        apply_decision(ctx, DecisionSide::Left).await;
-    }
-    StatusCode::NO_CONTENT
-}
-
-async fn cmd_right(State(state): State<WebState>) -> impl IntoResponse {
-    let target_dir = {
-        let mut guard = state.ctx.state.write().await;
-        let app_state = guard.state_mut();
-        app_state.close_directory_actions();
-        if app_state.selected_entry_is_directory() {
-            app_state.navigate_to_selected_directory()
-        } else {
-            None
-        }
-    };
-    if let Some(path) = target_dir {
-        attempt_directory_change(&state.ctx, path).await;
-    } else {
-        let ctx = state.ctx.clone();
-        apply_decision(ctx, DecisionSide::Right).await;
-    }
-    StatusCode::NO_CONTENT
-}
-
-async fn cmd_left_image(State(state): State<WebState>) -> impl IntoResponse {
-    let ctx = state.ctx.clone();
-    apply_decision(ctx, DecisionSide::Left).await;
-    StatusCode::NO_CONTENT
-}
-
-async fn cmd_right_image(State(state): State<WebState>) -> impl IntoResponse {
-    let ctx = state.ctx.clone();
-    apply_decision(ctx, DecisionSide::Right).await;
-    StatusCode::NO_CONTENT
-}
-
-async fn cmd_next(State(state): State<WebState>) -> impl IntoResponse {
-    let mut guard = state.ctx.state.write().await;
-    let app_state = guard.state_mut();
-    app_state.close_directory_actions();
-    if app_state.sidebar_expanded {
-        app_state.select_next_entry();
-    } else {
-        app_state.next();
-    }
-    drop(guard);
-    let ctx = state.ctx.clone();
-    broadcast_navigation(&ctx).await;
-    StatusCode::NO_CONTENT
-}
-
-async fn cmd_prev(State(state): State<WebState>) -> impl IntoResponse {
-    let mut guard = state.ctx.state.write().await;
-    let app_state = guard.state_mut();
-    app_state.close_directory_actions();
-    if app_state.sidebar_expanded {
-        app_state.select_prev_entry();
-    } else {
-        app_state.prev();
-    }
-    drop(guard);
-    let ctx = state.ctx.clone();
-    broadcast_navigation(&ctx).await;
-    StatusCode::NO_CONTENT
-}
-
-async fn cmd_jump_next(State(state): State<WebState>) -> impl IntoResponse {
-    let mut guard = state.ctx.state.write().await;
-    guard.state_mut().jump_next_undecided();
-    drop(guard);
-    let ctx = state.ctx.clone();
-    broadcast_navigation(&ctx).await;
-    StatusCode::NO_CONTENT
-}
-
-async fn cmd_jump_prev(State(state): State<WebState>) -> impl IntoResponse {
-    let mut guard = state.ctx.state.write().await;
-    guard.state_mut().jump_prev_undecided();
-    drop(guard);
-    let ctx = state.ctx.clone();
-    broadcast_navigation(&ctx).await;
-    StatusCode::NO_CONTENT
-}
-
-async fn cmd_home(State(state): State<WebState>) -> impl IntoResponse {
-    let mut guard = state.ctx.state.write().await;
-    let app_state = guard.state_mut();
-    app_state.close_directory_actions();
-    if app_state.queue_is_selected() {
-        app_state.select_queue_first();
-    } else if app_state.sidebar_expanded {
-        app_state.select_first_entry();
-    } else {
-        app_state.select_first_image();
-    }
-    drop(guard);
-    let ctx = state.ctx.clone();
-    broadcast_navigation(&ctx).await;
-    StatusCode::NO_CONTENT
-}
-
-async fn cmd_end(State(state): State<WebState>) -> impl IntoResponse {
-    let mut guard = state.ctx.state.write().await;
-    let app_state = guard.state_mut();
-    app_state.close_directory_actions();
-    if app_state.queue_is_selected() {
-        app_state.select_queue_last();
-    } else if app_state.sidebar_expanded {
-        app_state.select_last_entry();
-    } else {
-        app_state.select_last_image();
-    }
-    drop(guard);
-    let ctx = state.ctx.clone();
-    broadcast_navigation(&ctx).await;
-    StatusCode::NO_CONTENT
-}
-
-async fn cmd_undo(State(state): State<WebState>) -> impl IntoResponse {
-    let (undo_action, undone_image_id) = {
-        let mut guard = state.ctx.state.write().await;
-        let undone = guard
-            .state_mut()
-            .undo_last()
-            .map(|entry| (entry.undo_action, entry.image_id));
-        undone.unwrap_or((None, 0))
-    };
-
-    if let Some(action) = undo_action {
-        if let Err(err) = apply_undo_action(&action).await {
-            warn!(%err, "Failed to undo action");
-        }
-    }
-
-    let ctx = state.ctx.clone();
-    broadcast_navigation(&ctx).await;
-    if undone_image_id != 0 {
-        patch_stack_card_if_visible(&ctx, undone_image_id).await;
-    }
-    StatusCode::NO_CONTENT
-}
-
-async fn cmd_apply(State(state): State<WebState>) -> impl IntoResponse {
-    let needs_confirm = {
-        let mut guard = state.ctx.state.write().await;
-        guard.state_mut().hide_view(ModalView::ApplyConfirm);
-        drop(guard);
-        let guard = state.ctx.state.read().await;
-        let has_delete = guard
-            .state()
-            .images
-            .iter()
-            .any(|image| matches!(image.queued_action, Some(ActionConfig::Delete)));
-        state.ctx.config.destructive_delete && has_delete
-    };
-
-    if needs_confirm {
-        let mut guard = state.ctx.state.write().await;
-        guard.state_mut().show_view(ModalView::DeleteConfirm);
-        drop(guard);
-        let ctx = state.ctx.clone();
-        broadcast_patch(&ctx, UiPatch::MODALS_ONLY).await;
-        return StatusCode::NO_CONTENT;
-    }
-
-    let summary = apply_queue(&state.ctx).await;
-    finalize_apply_result(&state.ctx, summary).await;
-    StatusCode::NO_CONTENT
-}
-
-async fn cmd_apply_request(State(state): State<WebState>) -> impl IntoResponse {
-    let mut guard = state.ctx.state.write().await;
-    let app_state = guard.state_mut();
-    app_state.close_directory_actions();
-    app_state.show_view(ModalView::ApplyConfirm);
-    drop(guard);
-    let ctx = state.ctx.clone();
-    broadcast_patch(&ctx, UiPatch::MODALS_ONLY).await;
-    StatusCode::NO_CONTENT
-}
-
-async fn cmd_apply_confirm(State(state): State<WebState>) -> impl IntoResponse {
-    {
-        let mut guard = state.ctx.state.write().await;
-        guard.state_mut().hide_view(ModalView::DeleteConfirm);
-    }
-    let summary = apply_queue(&state.ctx).await;
-    finalize_apply_result(&state.ctx, summary).await;
-    StatusCode::NO_CONTENT
-}
-
-async fn cmd_reset_queue(State(state): State<WebState>) -> impl IntoResponse {
-    let mut guard = state.ctx.state.write().await;
-    guard.state_mut().reset_queue_state();
-    drop(guard);
-    let ctx = state.ctx.clone();
-    broadcast_patch(&ctx, UiPatch::RESET_QUEUE).await;
-    StatusCode::NO_CONTENT
-}
-
-async fn cmd_queue_prev(State(state): State<WebState>) -> impl IntoResponse {
-    move_queue_selection(&state, false).await
-}
-
-async fn cmd_queue_next(State(state): State<WebState>) -> impl IntoResponse {
-    move_queue_selection(&state, true).await
-}
-
-async fn move_queue_selection(state: &WebState, forward: bool) -> StatusCode {
-    let mut guard = state.ctx.state.write().await;
-    let app_state = guard.state_mut();
-    let moved = if forward {
-        app_state.select_queue_next()
-    } else {
-        app_state.select_queue_prev()
-    };
-    if moved {
-        if let Some(selected) = app_state.selected_queue_image_id {
-            activate_queue_item_selection(app_state, selected);
-        }
-    }
-    drop(guard);
-    let ctx = state.ctx.clone();
-    broadcast_navigation(&ctx).await;
-    StatusCode::NO_CONTENT
-}
-
-async fn cmd_queue_select(State(state): State<WebState>, Path(id): Path<u64>) -> impl IntoResponse {
-    let mut guard = state.ctx.state.write().await;
-    let app_state = guard.state_mut();
-    let selected = activate_queue_item_selection(app_state, id);
-    drop(guard);
-    let ctx = state.ctx.clone();
-    broadcast_navigation(&ctx).await;
-    if selected {
-        StatusCode::NO_CONTENT
-    } else {
-        StatusCode::NOT_FOUND
-    }
-}
-
-async fn cmd_queue_apply_selected(State(state): State<WebState>) -> impl IntoResponse {
-    let selected = {
-        let guard = state.ctx.state.read().await;
-        guard.state().queue_selected_item_for_apply()
-    };
-    let Some((image_id, path, action, rename_sequence)) = selected else {
-        return StatusCode::NO_CONTENT;
-    };
-
-    let (root_dir, destructive) = {
-        let guard = state.ctx.state.read().await;
-        (
-            guard.state().root_dir.clone(),
-            state.ctx.config.destructive_delete,
-        )
-    };
-    let Some(root_dir) = root_dir else {
-        return StatusCode::NO_CONTENT;
-    };
-    let config = FsConfig::new(root_dir, destructive);
-    let apply_result = apply_action(&config, &path, &action, rename_sequence).await;
-    if let Err(err) = apply_result {
-        warn!(%err, path = %path.display(), "Failed to apply selected queued action");
-        return StatusCode::NO_CONTENT;
-    }
-
-    {
-        let mut guard = state.ctx.state.write().await;
-        let app_state = guard.state_mut();
-        app_state.apply_selected_queue_action_result(image_id, &action);
-    }
-    let ctx = state.ctx.clone();
-    // Force a full viewer/stack refresh so removed files immediately disappear
-    // from the image stack after single-item queue apply.
-    broadcast_patch(&ctx, UiPatch::ALL).await;
-    StatusCode::NO_CONTENT
-}
-
-fn activate_queue_item_selection(
-    app_state: &mut crate::domain::state::AppStateInner,
-    image_id: u64,
-) -> bool {
-    let selected = app_state.select_queue_item_by_id(image_id);
-    if selected {
-        app_state.select_image_by_id(image_id);
-        app_state.activate_queue_focus();
-    }
-    selected
-}
-
-async fn cmd_queue_remove_selected(State(state): State<WebState>) -> impl IntoResponse {
-    let removed = {
-        let mut guard = state.ctx.state.write().await;
-        guard.state_mut().remove_selected_queue_item()
-    };
-    let Some(image_id) = removed else {
-        return StatusCode::NO_CONTENT;
-    };
-    let ctx = state.ctx.clone();
-    broadcast_navigation(&ctx).await;
-    patch_stack_card_if_visible(&ctx, image_id).await;
-    StatusCode::NO_CONTENT
 }
 
 #[derive(Default)]
@@ -567,359 +247,6 @@ async fn refresh_images_after_apply(ctx: &AppContext) {
     if let Some(path) = current_dir {
         run_scan(ctx, path).await;
     }
-}
-
-#[derive(Deserialize)]
-struct RenameDirectorySignals {
-    #[serde(alias = "directoryName", default)]
-    directory_name: String,
-}
-
-#[derive(Deserialize)]
-struct RootDirectorySignals {
-    #[serde(default)]
-    path: String,
-}
-
-async fn cmd_toggle_sidebar(State(state): State<WebState>) -> impl IntoResponse {
-    let mut guard = state.ctx.state.write().await;
-    guard.state_mut().toggle_sidebar();
-    guard.state_mut().close_directory_actions();
-    drop(guard);
-    let ctx = state.ctx.clone();
-    broadcast_viewer_and_signals(&ctx).await;
-    StatusCode::NO_CONTENT
-}
-
-async fn cmd_sidebar_root_select(
-    State(state): State<WebState>,
-    Json(signals): Json<RootDirectorySignals>,
-) -> impl IntoResponse {
-    if !cfg!(feature = "tauri") {
-        return StatusCode::FORBIDDEN;
-    }
-
-    let selected = signals.path.trim();
-    if selected.is_empty() {
-        return StatusCode::BAD_REQUEST;
-    }
-
-    let canonical = match tokio::fs::canonicalize(PathBuf::from(selected)).await {
-        Ok(path) => path,
-        Err(_) => return StatusCode::BAD_REQUEST,
-    };
-    match tokio::fs::metadata(&canonical).await {
-        Ok(meta) if meta.is_dir() => {}
-        _ => return StatusCode::BAD_REQUEST,
-    }
-
-    run_scan_with_root(&state.ctx, canonical.clone(), Some(canonical)).await;
-    let ctx = state.ctx.clone();
-    broadcast_patch(&ctx, UiPatch::ALL).await;
-    StatusCode::NO_CONTENT
-}
-
-async fn cmd_sidebar_open(State(state): State<WebState>) -> impl IntoResponse {
-    let path = {
-        let guard = state.ctx.state.read().await;
-        guard.state().navigate_to_selected_directory()
-    };
-    if let Some(path) = path {
-        attempt_directory_change(&state.ctx, path).await;
-    } else {
-        let ctx = state.ctx.clone();
-        broadcast_viewer_and_signals(&ctx).await;
-    }
-    StatusCode::NO_CONTENT
-}
-
-async fn cmd_sidebar_sort(State(state): State<WebState>, Path(mode): Path<String>) -> impl IntoResponse {
-    let sort_mode = match mode.as_str() {
-        "name-asc" => Some(SortMode {
-            key: SortKey::Alphabetical,
-            direction: SortDirection::Asc,
-        }),
-        "name-desc" => Some(SortMode {
-            key: SortKey::Alphabetical,
-            direction: SortDirection::Desc,
-        }),
-        "modified-asc" => Some(SortMode {
-            key: SortKey::LastModified,
-            direction: SortDirection::Asc,
-        }),
-        "modified-desc" => Some(SortMode {
-            key: SortKey::LastModified,
-            direction: SortDirection::Desc,
-        }),
-        "size-asc" => Some(SortMode {
-            key: SortKey::Size,
-            direction: SortDirection::Asc,
-        }),
-        "size-desc" => Some(SortMode {
-            key: SortKey::Size,
-            direction: SortDirection::Desc,
-        }),
-        _ => None,
-    };
-    let Some(sort_mode) = sort_mode else {
-        return StatusCode::BAD_REQUEST;
-    };
-
-    let current_dir = {
-        let mut guard = state.ctx.state.write().await;
-        let app_state = guard.state_mut();
-        app_state.set_sort_mode(sort_mode);
-        app_state.current_dir.clone()
-    };
-
-    if let Some(current_dir) = current_dir {
-        run_scan(&state.ctx, current_dir).await;
-    }
-    let ctx = state.ctx.clone();
-    broadcast_patch(&ctx, UiPatch::ALL).await;
-    StatusCode::NO_CONTENT
-}
-
-async fn cmd_sidebar_open_parent(State(state): State<WebState>) -> impl IntoResponse {
-    let path = {
-        let guard = state.ctx.state.read().await;
-        guard.state().navigate_to_parent_directory()
-    };
-    if let Some(path) = path {
-        attempt_directory_change(&state.ctx, path).await;
-    } else {
-        let ctx = state.ctx.clone();
-        broadcast_viewer_and_signals(&ctx).await;
-    }
-    StatusCode::NO_CONTENT
-}
-
-async fn cmd_sidebar_change_directory_cancel(State(state): State<WebState>) -> impl IntoResponse {
-    let mut guard = state.ctx.state.write().await;
-    let app_state = guard.state_mut();
-    app_state.pending_directory_path = None;
-    app_state.pending_delete_directory_path = None;
-    if app_state.active_modal == Some(ModalView::QueueNotEmptyConfirm) {
-        app_state.active_modal = None;
-    }
-    drop(guard);
-    let ctx = state.ctx.clone();
-    broadcast_patch(&ctx, UiPatch::MODALS_ONLY).await;
-    StatusCode::NO_CONTENT
-}
-
-async fn cmd_sidebar_change_directory_apply(State(state): State<WebState>) -> impl IntoResponse {
-    let target_path = {
-        let mut guard = state.ctx.state.write().await;
-        let app_state = guard.state_mut();
-        let target = app_state.pending_directory_path.take();
-        app_state.pending_delete_directory_path = None;
-        if app_state.active_modal == Some(ModalView::QueueNotEmptyConfirm) {
-            app_state.active_modal = None;
-        }
-        target
-    };
-    let Some(target_path) = target_path else {
-        return StatusCode::NO_CONTENT;
-    };
-
-    let _ = apply_queue(&state.ctx).await;
-    run_scan(&state.ctx, target_path).await;
-    let ctx = state.ctx.clone();
-    broadcast_patch(&ctx, UiPatch::ALL).await;
-    StatusCode::NO_CONTENT
-}
-
-async fn cmd_sidebar_change_directory_clear(State(state): State<WebState>) -> impl IntoResponse {
-    let target_path = {
-        let mut guard = state.ctx.state.write().await;
-        let app_state = guard.state_mut();
-        let target = app_state.pending_directory_path.take();
-        app_state.pending_delete_directory_path = None;
-        app_state.clear_queued_actions();
-        if app_state.active_modal == Some(ModalView::QueueNotEmptyConfirm) {
-            app_state.active_modal = None;
-        }
-        target
-    };
-    let Some(target_path) = target_path else {
-        return StatusCode::NO_CONTENT;
-    };
-
-    run_scan(&state.ctx, target_path).await;
-    let ctx = state.ctx.clone();
-    broadcast_patch(&ctx, UiPatch::ALL).await;
-    StatusCode::NO_CONTENT
-}
-
-async fn cmd_sidebar_rename(
-    State(state): State<WebState>,
-    ReadSignals(signals): ReadSignals<RenameDirectorySignals>,
-) -> impl IntoResponse {
-    let new_name = signals.directory_name.trim();
-    if new_name.is_empty() {
-        return StatusCode::NO_CONTENT;
-    }
-    let (source, target) = {
-        let guard = state.ctx.state.read().await;
-        let Some(source) = guard.state().selected_directory_path() else {
-            return StatusCode::NO_CONTENT;
-        };
-        let Some(parent) = source.parent() else {
-            return StatusCode::BAD_REQUEST;
-        };
-        let target = parent.join(new_name);
-        let root = guard.state().root_dir.clone();
-        if let Some(root) = root {
-            if !target.starts_with(&root) {
-                return StatusCode::BAD_REQUEST;
-            }
-        }
-        (source, target)
-    };
-    if let Err(err) = tokio::fs::rename(&source, &target).await {
-        warn!(%err, source=%source.display(), target=%target.display(), "Failed to rename directory");
-    }
-    let current_dir = {
-        let guard = state.ctx.state.read().await;
-        guard.state().current_dir.clone()
-    };
-    if let Some(current_dir) = current_dir {
-        run_scan(&state.ctx, current_dir).await;
-    }
-    let ctx = state.ctx.clone();
-    broadcast_viewer_and_signals(&ctx).await;
-    StatusCode::NO_CONTENT
-}
-
-async fn cmd_sidebar_delete_request(State(state): State<WebState>) -> impl IntoResponse {
-    let path = {
-        let mut guard = state.ctx.state.write().await;
-        let app_state = guard.state_mut();
-        let is_parent_link = app_state
-            .selected_entry()
-            .map(|entry| entry.is_parent_link)
-            .unwrap_or(false);
-        let path = if is_parent_link {
-            None
-        } else {
-            app_state.selected_directory_path()
-        };
-        if let Some(path) = path.clone() {
-            app_state.pending_delete_directory_path = Some(path);
-            app_state.active_modal = Some(ModalView::DirectoryDeleteConfirm);
-        }
-        path
-    };
-    let Some(_) = path else {
-        return StatusCode::NO_CONTENT;
-    };
-    let ctx = state.ctx.clone();
-    broadcast_patch(&ctx, UiPatch::MODALS_ONLY).await;
-    StatusCode::NO_CONTENT
-}
-
-async fn cmd_sidebar_delete_confirm(State(state): State<WebState>) -> impl IntoResponse {
-    let path = {
-        let mut guard = state.ctx.state.write().await;
-        let app_state = guard.state_mut();
-        let path = app_state.pending_delete_directory_path.take();
-        if app_state.active_modal == Some(ModalView::DirectoryDeleteConfirm) {
-            app_state.active_modal = None;
-        }
-        path
-    };
-    let Some(path) = path else {
-        return StatusCode::NO_CONTENT;
-    };
-    if let Err(err) = tokio::fs::remove_dir(&path).await {
-        warn!(%err, path=%path.display(), "Failed to delete directory");
-    }
-    let current_dir = {
-        let guard = state.ctx.state.read().await;
-        guard.state().current_dir.clone()
-    };
-    if let Some(current_dir) = current_dir {
-        run_scan(&state.ctx, current_dir).await;
-    }
-    let ctx = state.ctx.clone();
-    broadcast_patch(&ctx, UiPatch::VIEWER_MODALS_AND_SIGNALS).await;
-    StatusCode::NO_CONTENT
-}
-
-async fn cmd_show_queue(State(state): State<WebState>) -> impl IntoResponse {
-    let mut guard = state.ctx.state.write().await;
-    let app_state = guard.state_mut();
-    app_state.close_directory_actions();
-    app_state.toggle_queue_sidebar();
-    drop(guard);
-    let ctx = state.ctx.clone();
-    broadcast_viewer_and_signals(&ctx).await;
-    StatusCode::NO_CONTENT
-}
-
-async fn cmd_help(State(state): State<WebState>) -> impl IntoResponse {
-    let mut guard = state.ctx.state.write().await;
-    let app_state = guard.state_mut();
-    app_state.close_directory_actions();
-    if app_state.active_modal == Some(ModalView::Help) {
-        app_state.close_view();
-    } else {
-        app_state.show_view(ModalView::Help);
-    }
-    drop(guard);
-    let ctx = state.ctx.clone();
-    broadcast_patch(&ctx, UiPatch::MODALS_ONLY).await;
-    StatusCode::NO_CONTENT
-}
-
-async fn cmd_select(State(state): State<WebState>, Path(id): Path<u64>) -> impl IntoResponse {
-    let mut guard = state.ctx.state.write().await;
-    let selected = guard.state_mut().select_entry_by_id(id);
-    if selected {
-        guard.state_mut().close_directory_actions();
-    }
-    drop(guard);
-    let ctx = state.ctx.clone();
-    broadcast_patch(&ctx, UiPatch::VIEWER_MODALS_AND_SIGNALS).await;
-    if selected {
-        StatusCode::NO_CONTENT
-    } else {
-        StatusCode::NOT_FOUND
-    }
-}
-
-async fn cmd_sidebar_open_entry(
-    State(state): State<WebState>,
-    Path(id): Path<u64>,
-) -> impl IntoResponse {
-    let path = {
-        let mut guard = state.ctx.state.write().await;
-        let app_state = guard.state_mut();
-        if !app_state.select_entry_by_id(id) {
-            return StatusCode::NOT_FOUND;
-        }
-        app_state.navigate_to_selected_directory()
-    };
-    if let Some(path) = path {
-        attempt_directory_change(&state.ctx, path).await;
-    } else {
-        let ctx = state.ctx.clone();
-        broadcast_viewer_and_signals(&ctx).await;
-    }
-    StatusCode::NO_CONTENT
-}
-
-async fn cmd_close(State(state): State<WebState>) -> impl IntoResponse {
-    let mut guard = state.ctx.state.write().await;
-    guard.state_mut().close_view();
-    guard.state_mut().close_directory_actions();
-    guard.state_mut().pending_directory_path = None;
-    guard.state_mut().pending_delete_directory_path = None;
-    drop(guard);
-    let ctx = state.ctx.clone();
-    broadcast_patch(&ctx, UiPatch::MODALS_ONLY).await;
-    StatusCode::NO_CONTENT
 }
 
 async fn apply_decision(ctx: AppContext, side: DecisionSide) {
@@ -1119,9 +446,12 @@ async fn image_by_rel_path(State(state): State<WebState>, Path(rel): Path<String
     };
     let rel_path = PathBuf::from(decoded);
     if rel_path.is_absolute()
-        || rel_path
-            .components()
-            .any(|c| matches!(c, Component::ParentDir | Component::RootDir | Component::Prefix(_)))
+        || rel_path.components().any(|c| {
+            matches!(
+                c,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
     {
         return StatusCode::BAD_REQUEST.into_response();
     }
@@ -1532,12 +862,17 @@ fn build_queue_items(
         .filter_map(|queued_id| state.images.iter().find(|image| image.id == *queued_id))
         .filter_map(|image| {
             image.queued_action.as_ref()?;
-            Some(queue_item_from_action(image, decision_side(image), state.root_dir.as_ref()))
+            Some(queue_item_from_action(
+                image,
+                decision_side(image),
+                state.root_dir.as_ref(),
+            ))
         })
         .collect();
     for item in &mut queue_items {
         item.selected = Some(item.image_id) == queue_selected_id;
-        item.peer_active = !item.selected && !state.queue_focus && Some(item.image_id) == current_id;
+        item.peer_active =
+            !item.selected && !state.queue_focus && Some(item.image_id) == current_id;
     }
     queue_items
 }
@@ -1887,11 +1222,9 @@ fn render_active_modal(view: &AppView) -> String {
         Some(ModalView::QueueNotEmptyConfirm) => {
             QueueNotEmptyModalTemplate {}.render().unwrap_or_default()
         }
-        Some(ModalView::DirectoryDeleteConfirm) => {
-            DirectoryDeleteConfirmModalTemplate {}
-                .render()
-                .unwrap_or_default()
-        }
+        Some(ModalView::DirectoryDeleteConfirm) => DirectoryDeleteConfirmModalTemplate {}
+            .render()
+            .unwrap_or_default(),
         Some(ModalView::Help) => HelpModalTemplate {}.render().unwrap_or_default(),
         Some(ModalView::ApplyResult) => ResultModalTemplate { view }.render().unwrap_or_default(),
         None => "<modal-none id=\"modal\"></modal-none>".to_string(),
@@ -1899,453 +1232,4 @@ fn render_active_modal(view: &AppView) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::app::{AppConfig, AppContext};
-    use crate::domain::{
-        ActionConfig, ActionMapping, AppState, DecisionSide, DecisionState, ImageMeta, ModalView,
-        SortDirection, SortKey, SortMode,
-    };
-    use crate::domain::undo::UndoEntry;
-    use axum::body::Body;
-    use axum::http::Request;
-    use axum::http::StatusCode;
-    use axum::response::IntoResponse;
-    use std::path::PathBuf;
-    use tokio::time::{Duration, timeout};
-    use tower::util::ServiceExt;
-
-    fn sample_image(id: u64, path: &str, original_order: usize) -> ImageEntry {
-        ImageEntry {
-            id,
-            path: PathBuf::from(path),
-            original_order,
-            decision: DecisionState::Undecided,
-            queued_action: None,
-            rename_sequence: None,
-            meta: ImageMeta {
-                created: None,
-                modified: None,
-                size: 0,
-                orientation: None,
-            },
-        }
-    }
-
-    fn sample_state() -> crate::domain::state::AppStateInner {
-        let mapping = ActionMapping {
-            left: ActionConfig::Delete,
-            right: ActionConfig::Keep,
-        };
-        let sort_mode = SortMode {
-            key: SortKey::Filesystem,
-            direction: SortDirection::Asc,
-        };
-        let mut state = crate::domain::state::AppStateInner::new(true, mapping, sort_mode);
-        state.set_images(
-            vec![
-                sample_image(1, "/tmp/a.jpg", 0),
-                sample_image(2, "/tmp/b.jpg", 1),
-                sample_image(3, "/tmp/c.jpg", 2),
-                sample_image(4, "/tmp/d.jpg", 3),
-                sample_image(5, "/tmp/e.jpg", 4),
-            ],
-            Some(PathBuf::from("/tmp")),
-        );
-        state
-    }
-
-    fn sample_machine(queue_mode: bool) -> AppState {
-        let mapping = ActionMapping {
-            left: ActionConfig::Delete,
-            right: ActionConfig::Keep,
-        };
-        let sort_mode = SortMode {
-            key: SortKey::Filesystem,
-            direction: SortDirection::Asc,
-        };
-        let mut machine = AppState::new(queue_mode, mapping, sort_mode);
-        machine.transition_to_scanning();
-        machine.transition_to_ready(
-            vec![sample_image(1, "/tmp/a.jpg", 0)],
-            Some(PathBuf::from("/tmp")),
-        );
-        machine.transition_to_viewing();
-        machine
-    }
-
-    #[test]
-    fn preload_window_is_bounded_and_ordered() {
-        let mut state = sample_state();
-        state.cursor = 2;
-        let window = preload_window_paths(&state, 1);
-        let labels: Vec<String> = window
-            .iter()
-            .filter_map(|path| {
-                path.file_name()
-                    .map(|name| name.to_string_lossy().to_string())
-            })
-            .collect();
-        assert_eq!(labels, vec!["b.jpg", "c.jpg", "d.jpg"]);
-    }
-
-    #[test]
-    fn image_card_render_contains_entry_identity_and_alignment() {
-        let mut state = sample_state();
-        state.images[1].decision = DecisionState::Decided {
-            side: DecisionSide::Right,
-            action: ActionConfig::Keep,
-        };
-        state.cursor = 1;
-        let cards = build_stack_cards_in_range(&state, 0, 2);
-        let card = cards.iter().find(|card| card.image_id == 2).unwrap();
-        let html = render_image_card(card);
-        assert!(html.contains("id=\"image-card-2\""));
-        assert!(html.contains("class=\"align-right\""));
-        assert!(html.contains("src=\"/image/by-path/b.jpg\""));
-    }
-
-    #[test]
-    fn image_card_markup_is_identical_for_hydration_and_single_entry_paths() {
-        let mut state = sample_state();
-        state.images[2].decision = DecisionState::Decided {
-            side: DecisionSide::Left,
-            action: ActionConfig::Delete,
-        };
-        state.cursor = 2;
-        let cards = build_stack_cards_in_range(&state, 1, 3);
-
-        let hydrated_html = cards
-            .iter()
-            .map(render_image_card)
-            .collect::<Vec<_>>()
-            .join("");
-        let single_entry_card = cards.iter().find(|card| card.image_id == 3).unwrap();
-        let single_entry_html = render_image_card(single_entry_card);
-
-        assert!(hydrated_html.contains(&single_entry_html));
-    }
-
-    #[test]
-    fn undo_selects_the_image_that_was_undone() {
-        let mut state = sample_state();
-        state.select_image_by_id(2);
-        let outcome = state.apply_decision(DecisionSide::Right).unwrap();
-        state.record_undo(UndoEntry {
-            image_id: outcome.image_id,
-            previous_decision: outcome.previous_decision,
-            previous_queue: outcome.previous_queue,
-            previous_cursor: outcome.cursor_before,
-            undo_action: None,
-        });
-
-        state.undo_last().unwrap();
-
-        assert_eq!(state.selected_entry_id, Some(2));
-        assert_eq!(state.current().map(|image| image.id), Some(2));
-    }
-
-    #[tokio::test]
-    async fn startup_without_path_renders_sidebar_first_shell_without_modal() {
-        let mapping = ActionMapping {
-            left: ActionConfig::Delete,
-            right: ActionConfig::Keep,
-        };
-        let sort_mode = SortMode {
-            key: SortKey::Filesystem,
-            direction: SortDirection::Asc,
-        };
-        let state = AppState::new(true, mapping, sort_mode);
-        let ctx = AppContext::new(state, AppConfig::default());
-
-        let axum::response::Html(html) = render_full_page(&ctx).await;
-        assert!(html.contains("sidebar-panel"));
-        assert!(html.contains("No supported images in this directory."));
-        assert!(html.contains("<modal-none id=\"modal\"></modal-none>"));
-    }
-
-    #[tokio::test]
-    async fn apply_shows_delete_confirmation_when_destructive_delete_enabled() {
-        let mut state = sample_machine(true);
-        state.state_mut().images[0].queued_action = Some(ActionConfig::Delete);
-
-        let config = AppConfig {
-            destructive_delete: true,
-            ..AppConfig::default()
-        };
-        let ctx = AppContext::new(state, config);
-
-        let response = cmd_apply(State(WebState { ctx: ctx.clone() }))
-            .await
-            .into_response();
-
-        assert_eq!(response.status(), StatusCode::NO_CONTENT);
-        let guard = ctx.state.read().await;
-        assert_eq!(guard.state().active_modal, Some(ModalView::DeleteConfirm));
-    }
-
-    #[tokio::test]
-    async fn lagged_stream_recovery_builds_full_resync_events() {
-        let ctx = AppContext::new(sample_machine(true), AppConfig::default());
-
-        let recovery = stream_recovery_events(&ctx, RecvError::Lagged(2))
-            .await
-            .expect("lagged streams must resync");
-        let full = build_full_resync_events(&ctx).await;
-
-        assert!(!recovery.is_empty());
-        assert_eq!(recovery.len(), full.len());
-    }
-
-    #[tokio::test]
-    async fn rendered_shortcuts_use_simple_posts_for_shortcuts_and_buttons() {
-        let ctx = AppContext::new(sample_machine(true), AppConfig::default());
-        let axum::response::Html(html) = render_full_page(&ctx).await;
-
-        assert!(html.contains("@get('/events', { openWhenHidden: true })"));
-        assert!(html.contains("@post('/cmd/left')"));
-        assert!(html.contains("@post('/cmd/next')"));
-        assert!(html.contains("@post('/cmd/apply/request')"));
-        assert!(html.contains("<button data-on:click=\"@post('/cmd/left')\">⬅️ Left</button>"));
-        assert!(html.contains("window.piclrInitQueueSidebarList"));
-        assert!(html.contains("outsideView"));
-    }
-
-    #[tokio::test]
-    async fn apply_request_shows_apply_confirmation_modal() {
-        let ctx = AppContext::new(sample_machine(true), AppConfig::default());
-        let response = cmd_apply_request(State(WebState { ctx: ctx.clone() }))
-            .await
-            .into_response();
-        assert_eq!(response.status(), StatusCode::NO_CONTENT);
-        let guard = ctx.state.read().await;
-        assert_eq!(guard.state().active_modal, Some(ModalView::ApplyConfirm));
-    }
-
-    #[tokio::test]
-    async fn queue_toggle_uses_sidebar_not_modal() {
-        let ctx = AppContext::new(sample_machine(true), AppConfig::default());
-        let _ = cmd_show_queue(State(WebState { ctx: ctx.clone() })).await;
-
-        let axum::response::Html(html) = render_full_page(&ctx).await;
-        assert!(html.contains("id=\"queue-sidebar\""));
-        assert!(!html.contains("<modal-queue"));
-    }
-
-    #[tokio::test]
-    async fn selected_queue_row_shows_apply_and_undo_icons() {
-        let mapping = ActionMapping {
-            left: ActionConfig::Delete,
-            right: ActionConfig::Keep,
-        };
-        let sort_mode = SortMode {
-            key: SortKey::Filesystem,
-            direction: SortDirection::Asc,
-        };
-        let mut machine = AppState::new(true, mapping, sort_mode);
-        machine.transition_to_scanning();
-        machine.transition_to_ready(
-            vec![
-                sample_image(1, "/tmp/a.jpg", 0),
-                sample_image(2, "/tmp/b.jpg", 1),
-            ],
-            Some(PathBuf::from("/tmp")),
-        );
-        machine.transition_to_viewing();
-        machine.state_mut().apply_decision(DecisionSide::Left);
-        machine.state_mut().apply_decision(DecisionSide::Right);
-        machine.state_mut().toggle_queue_sidebar();
-        machine.state_mut().select_queue_last();
-
-        let ctx = AppContext::new(machine, AppConfig::default());
-        let axum::response::Html(html) = render_full_page(&ctx).await;
-        assert!(html.contains("/cmd/queue/apply-selected"));
-        assert!(html.contains("/cmd/queue/remove-selected"));
-    }
-
-    #[tokio::test]
-    async fn applying_selected_queue_item_preserves_remaining_queue() {
-        let mapping = ActionMapping {
-            left: ActionConfig::Delete,
-            right: ActionConfig::Keep,
-        };
-        let sort_mode = SortMode {
-            key: SortKey::Filesystem,
-            direction: SortDirection::Asc,
-        };
-        let mut machine = AppState::new(true, mapping, sort_mode);
-        machine.transition_to_scanning();
-        machine.transition_to_ready(
-            vec![
-                sample_image(1, "/tmp/a.jpg", 0),
-                sample_image(2, "/tmp/b.jpg", 1),
-                sample_image(3, "/tmp/c.jpg", 2),
-            ],
-            Some(PathBuf::from("/tmp")),
-        );
-        machine.transition_to_viewing();
-
-        machine.state_mut().apply_decision(DecisionSide::Right);
-        machine.state_mut().apply_decision(DecisionSide::Right);
-        machine.state_mut().apply_decision(DecisionSide::Right);
-        machine.state_mut().toggle_queue_sidebar();
-        machine.state_mut().select_queue_first();
-
-        let ctx = AppContext::new(machine, AppConfig::default());
-        let response = cmd_queue_apply_selected(State(WebState { ctx: ctx.clone() }))
-            .await
-            .into_response();
-        assert_eq!(response.status(), StatusCode::NO_CONTENT);
-
-        let guard = ctx.state.read().await;
-        assert_eq!(guard.state().projection().queue_count, 2);
-    }
-
-    #[tokio::test]
-    async fn applying_selected_delete_does_not_leave_stale_nav_file_entry() {
-        let mapping = ActionMapping {
-            left: ActionConfig::Delete,
-            right: ActionConfig::Keep,
-        };
-        let sort_mode = SortMode {
-            key: SortKey::Filesystem,
-            direction: SortDirection::Asc,
-        };
-        let mut machine = AppState::new(true, mapping, sort_mode);
-        machine.transition_to_scanning();
-        machine.transition_to_ready(
-            vec![
-                sample_image(1, "/tmp/a.jpg", 0),
-                sample_image(2, "/tmp/b.jpg", 1),
-            ],
-            Some(PathBuf::from("/tmp")),
-        );
-        machine.transition_to_viewing();
-
-        machine.state_mut().apply_decision(DecisionSide::Left);
-        machine.state_mut().apply_decision(DecisionSide::Right);
-        machine.state_mut().toggle_queue_sidebar();
-        machine.state_mut().select_queue_first();
-
-        let ctx = AppContext::new(machine, AppConfig::default());
-        let response = cmd_queue_apply_selected(State(WebState { ctx: ctx.clone() }))
-            .await
-            .into_response();
-        assert_eq!(response.status(), StatusCode::NO_CONTENT);
-
-        // Regression: build/render should not panic due to stale nav->image references.
-        let _ = build_view(&ctx).await;
-    }
-
-    #[tokio::test]
-    async fn undo_still_uses_stack_when_queue_is_selected() {
-        let mapping = ActionMapping {
-            left: ActionConfig::Delete,
-            right: ActionConfig::Keep,
-        };
-        let sort_mode = SortMode {
-            key: SortKey::Filesystem,
-            direction: SortDirection::Asc,
-        };
-        let mut machine = AppState::new(true, mapping, sort_mode);
-        machine.transition_to_scanning();
-        machine.transition_to_ready(
-            vec![
-                sample_image(1, "/tmp/a.jpg", 0),
-                sample_image(2, "/tmp/b.jpg", 1),
-            ],
-            Some(PathBuf::from("/tmp")),
-        );
-        machine.transition_to_viewing();
-
-        let first_outcome = machine.state_mut().apply_decision(DecisionSide::Left).unwrap();
-        machine.state_mut().record_undo(UndoEntry {
-            image_id: first_outcome.image_id,
-            previous_decision: first_outcome.previous_decision,
-            previous_queue: first_outcome.previous_queue,
-            previous_cursor: first_outcome.cursor_before,
-            undo_action: None,
-        });
-        machine.state_mut().apply_decision(DecisionSide::Right);
-        machine.state_mut().toggle_queue_sidebar();
-        machine.state_mut().select_queue_last();
-
-        let ctx = AppContext::new(machine, AppConfig::default());
-        let _ = cmd_undo(State(WebState { ctx: ctx.clone() })).await;
-        let guard = ctx.state.read().await;
-        assert_eq!(guard.state().projection().queue_count, 1);
-        assert_eq!(guard.state().undo_stack.len(), 0);
-    }
-
-    #[tokio::test]
-    async fn events_endpoint_accepts_get_and_rejects_patch() {
-        let ctx = AppContext::new(sample_machine(true), AppConfig::default());
-        let app = router(ctx);
-
-        let get_response = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method("GET")
-                    .uri("/events")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(get_response.status(), StatusCode::OK);
-
-        let patch_response = app
-            .oneshot(
-                Request::builder()
-                    .method("PATCH")
-                    .uri("/events")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(patch_response.status(), StatusCode::METHOD_NOT_ALLOWED);
-    }
-
-    #[cfg(not(feature = "tauri"))]
-    #[tokio::test]
-    async fn root_select_endpoint_is_forbidden_without_tauri() {
-        let ctx = AppContext::new(sample_machine(true), AppConfig::default());
-        let app = router(ctx);
-
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/cmd/sidebar/root/select")
-                    .header("content-type", "application/json")
-                    .body(Body::from(r#"{"path":"/tmp"}"#))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::FORBIDDEN);
-    }
-
-    #[tokio::test]
-    async fn apply_decision_releases_state_lock_before_immediate_fs_work() {
-        let ctx = AppContext::new(sample_machine(false), AppConfig::default());
-        let barrier = Arc::new(tokio::sync::Barrier::new(2));
-        set_apply_decision_test_barrier(Some(barrier.clone())).await;
-
-        let task_ctx = ctx.clone();
-        let apply_task = tokio::spawn(async move {
-            apply_decision(task_ctx, DecisionSide::Left).await;
-        });
-
-        barrier.wait().await;
-        let lock_result = timeout(Duration::from_millis(250), ctx.state.write()).await;
-        assert!(lock_result.is_ok(), "state write lock should be available");
-        drop(lock_result.unwrap());
-
-        set_apply_decision_test_barrier(None).await;
-        let _ = apply_task.await;
-    }
-}
+mod tests;

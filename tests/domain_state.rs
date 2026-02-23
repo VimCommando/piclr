@@ -247,7 +247,11 @@ fn queue_sidebar_selection_and_override_work() {
     assert!(machine.state_mut().select_queue_last());
     assert_eq!(machine.state().selected_queue_image_id, Some(3));
 
-    assert!(machine.state_mut().override_selected_queue_action(DecisionSide::Left));
+    assert!(
+        machine
+            .state_mut()
+            .override_selected_queue_action(DecisionSide::Left)
+    );
     let entry = machine
         .state()
         .images
