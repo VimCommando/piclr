@@ -362,20 +362,7 @@ async fn cmd_apply(State(state): State<WebState>) -> impl IntoResponse {
     }
 
     let summary = apply_queue(&state.ctx).await;
-    refresh_images_after_apply(&state.ctx).await;
-    {
-        let mut guard = state.ctx.state.write().await;
-        let state = guard.state_mut();
-        state.last_apply_result = Some(crate::domain::state::ApplyResultSummary {
-            completed: summary.completed,
-            total: summary.total,
-            failed: summary.failed,
-            errors: summary.errors,
-        });
-        state.show_view(ModalView::ApplyResult);
-    }
-    let ctx = state.ctx.clone();
-    broadcast_patch(&ctx, UiPatch::VIEWER_MODALS_AND_SIGNALS).await;
+    finalize_apply_result(&state.ctx, summary).await;
     StatusCode::NO_CONTENT
 }
 
@@ -396,20 +383,7 @@ async fn cmd_apply_confirm(State(state): State<WebState>) -> impl IntoResponse {
         guard.state_mut().hide_view(ModalView::DeleteConfirm);
     }
     let summary = apply_queue(&state.ctx).await;
-    refresh_images_after_apply(&state.ctx).await;
-    {
-        let mut guard = state.ctx.state.write().await;
-        let state = guard.state_mut();
-        state.last_apply_result = Some(crate::domain::state::ApplyResultSummary {
-            completed: summary.completed,
-            total: summary.total,
-            failed: summary.failed,
-            errors: summary.errors,
-        });
-        state.show_view(ModalView::ApplyResult);
-    }
-    let ctx = state.ctx.clone();
-    broadcast_patch(&ctx, UiPatch::VIEWER_MODALS_AND_SIGNALS).await;
+    finalize_apply_result(&state.ctx, summary).await;
     StatusCode::NO_CONTENT
 }
 
@@ -423,29 +397,24 @@ async fn cmd_reset_queue(State(state): State<WebState>) -> impl IntoResponse {
 }
 
 async fn cmd_queue_prev(State(state): State<WebState>) -> impl IntoResponse {
-    let mut guard = state.ctx.state.write().await;
-    let app_state = guard.state_mut();
-    let moved = app_state.select_queue_prev();
-    if moved {
-        if let Some(selected) = app_state.selected_queue_image_id {
-            app_state.select_image_by_id(selected);
-            app_state.activate_queue_focus();
-        }
-    }
-    drop(guard);
-    let ctx = state.ctx.clone();
-    broadcast_patch(&ctx, navigation_patch(&ctx).await).await;
-    StatusCode::NO_CONTENT
+    move_queue_selection(&state, false).await
 }
 
 async fn cmd_queue_next(State(state): State<WebState>) -> impl IntoResponse {
+    move_queue_selection(&state, true).await
+}
+
+async fn move_queue_selection(state: &WebState, forward: bool) -> StatusCode {
     let mut guard = state.ctx.state.write().await;
     let app_state = guard.state_mut();
-    let moved = app_state.select_queue_next();
+    let moved = if forward {
+        app_state.select_queue_next()
+    } else {
+        app_state.select_queue_prev()
+    };
     if moved {
         if let Some(selected) = app_state.selected_queue_image_id {
-            app_state.select_image_by_id(selected);
-            app_state.activate_queue_focus();
+            activate_queue_item_selection(app_state, selected);
         }
     }
     drop(guard);
@@ -457,11 +426,7 @@ async fn cmd_queue_next(State(state): State<WebState>) -> impl IntoResponse {
 async fn cmd_queue_select(State(state): State<WebState>, Path(id): Path<u64>) -> impl IntoResponse {
     let mut guard = state.ctx.state.write().await;
     let app_state = guard.state_mut();
-    let selected = app_state.select_queue_item_by_id(id);
-    if selected {
-        app_state.select_image_by_id(id);
-        app_state.activate_queue_focus();
-    }
+    let selected = activate_queue_item_selection(app_state, id);
     drop(guard);
     let ctx = state.ctx.clone();
     broadcast_patch(&ctx, navigation_patch(&ctx).await).await;
@@ -508,6 +473,18 @@ async fn cmd_queue_apply_selected(State(state): State<WebState>) -> impl IntoRes
     // from the image stack after single-item queue apply.
     broadcast_patch(&ctx, UiPatch::ALL).await;
     StatusCode::NO_CONTENT
+}
+
+fn activate_queue_item_selection(
+    app_state: &mut crate::domain::state::AppStateInner,
+    image_id: u64,
+) -> bool {
+    let selected = app_state.select_queue_item_by_id(image_id);
+    if selected {
+        app_state.select_image_by_id(image_id);
+        app_state.activate_queue_focus();
+    }
+    selected
 }
 
 async fn cmd_queue_remove_selected(State(state): State<WebState>) -> impl IntoResponse {
@@ -564,6 +541,22 @@ async fn apply_queue(ctx: &AppContext) -> ApplySummary {
     let mut guard = ctx.state.write().await;
     guard.state_mut().clear_queued_actions();
     summary
+}
+
+async fn finalize_apply_result(ctx: &AppContext, summary: ApplySummary) {
+    refresh_images_after_apply(ctx).await;
+    {
+        let mut guard = ctx.state.write().await;
+        let state = guard.state_mut();
+        state.last_apply_result = Some(crate::domain::state::ApplyResultSummary {
+            completed: summary.completed,
+            total: summary.total,
+            failed: summary.failed,
+            errors: summary.errors,
+        });
+        state.show_view(ModalView::ApplyResult);
+    }
+    broadcast_patch(ctx, UiPatch::VIEWER_MODALS_AND_SIGNALS).await;
 }
 
 async fn refresh_images_after_apply(ctx: &AppContext) {
@@ -1740,6 +1733,14 @@ fn image_src_for(image: &ImageEntry, root_dir: Option<&PathBuf>) -> String {
     format!("/image/by-path/{}", urlencoding::encode(&rel))
 }
 
+fn file_label_for_image(image: &ImageEntry, root_dir: Option<&PathBuf>) -> String {
+    root_dir
+        .and_then(|root| image.path.strip_prefix(root).ok())
+        .unwrap_or(&image.path)
+        .to_string_lossy()
+        .to_string()
+}
+
 fn queue_item_from_action(
     image: &ImageEntry,
     _action: &ActionConfig,
@@ -1756,32 +1757,22 @@ fn queue_item_from_action(
         Some(DecisionSide::Right) => "right".to_string(),
         None => "none".to_string(),
     };
-    let file_label = root_dir
-        .and_then(|root| image.path.strip_prefix(root).ok())
-        .unwrap_or(&image.path)
-        .to_string_lossy()
-        .to_string();
     QueueItem {
         image_id: image.id,
         status_kind,
         action_tone,
-        file_label,
+        file_label: file_label_for_image(image, root_dir),
         selected: false,
         peer_active: false,
     }
 }
 
 fn queue_item_none(image: &ImageEntry, root_dir: Option<&PathBuf>) -> QueueItem {
-    let file_label = root_dir
-        .and_then(|root| image.path.strip_prefix(root).ok())
-        .unwrap_or(&image.path)
-        .to_string_lossy()
-        .to_string();
     QueueItem {
         image_id: image.id,
         status_kind: "none".to_string(),
         action_tone: "neutral".to_string(),
-        file_label,
+        file_label: file_label_for_image(image, root_dir),
         selected: false,
         peer_active: false,
     }

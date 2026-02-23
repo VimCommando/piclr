@@ -12,10 +12,6 @@
         id="queue-list"
         data-init="window.piclrInitQueueSidebarList?.(document.getElementById('queue-list'))"
         data-effect="
-            const rows = [...el.querySelectorAll('entry-line[data-image-id]')];
-            $queueListLen = rows.length;
-            const current = el.querySelector('entry-line.log-entry-current');
-            $queueSelectedIndex = current ? rows.indexOf(current) : -1;
             window.piclrInitQueueSidebarList?.(el);
             $selectedQueueItem
         "
