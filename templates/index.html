@@ -131,6 +131,70 @@
 
                     return false;
                 };
+
+                window.piclrResolveAppAction = (evt, state) => {
+                    const key = evt.code || evt.key;
+                    const shift = evt.shiftKey;
+                    const sidebarDirBlocked =
+                        state.sidebarExpanded &&
+                        state.sidebarSelectedKind === "directory" &&
+                        state.currentPath === "/";
+                    const canPrev = !state.sidebarExpanded
+                        ? state.counterImageIndex > 1
+                        : state.sidebarSelectedIndex > 0;
+                    const canNext = !state.sidebarExpanded
+                        ? state.counterImageIndex < state.counterImageTotal
+                        : state.sidebarSelectedIndex < state.sidebarListLen - 1;
+
+                    if (shift && (key === "ArrowUp" || evt.key === "K")) return "queue-prev";
+                    if (shift && (key === "ArrowDown" || evt.key === "J")) return "queue-next";
+                    if (shift && (key === "ArrowLeft" || evt.key === "H") && state.queueSelected)
+                        return "queue-remove-selected";
+                    if (shift && (key === "ArrowRight" || evt.key === "L") && state.queueSelected)
+                        return "queue-apply-selected";
+                    if (key === "BracketRight" || evt.key === "]") return "jump-next";
+                    if (key === "BracketLeft" || evt.key === "[") return "jump-prev";
+                    if ((key === "ArrowLeft" || evt.key === "h" || evt.key === "H") && !sidebarDirBlocked)
+                        return "left";
+                    if (key === "ArrowRight" || evt.key === "l" || evt.key === "L") return "right";
+                    if ((key === "ArrowUp" || evt.key === "k" || evt.key === "K") && canPrev)
+                        return "prev";
+                    if ((key === "ArrowDown" || evt.key === "j" || evt.key === "J") && canNext)
+                        return "next";
+                    if (key === "Home") return "home";
+                    if (key === "End") return "end";
+                    if (evt.key === "i" || evt.key === "I") return "toggle-sidebar";
+                    if ((evt.key === "o" || evt.key === "O") && evt.ctrlKey) return "toggle-sidebar";
+                    if (
+                        evt.key === "Enter" &&
+                        evt.ctrlKey &&
+                        state.sidebarExpanded &&
+                        state.sidebarSelectedKind === "directory" &&
+                        !state.sidebarSelectedParent
+                    )
+                        return "rename-directory";
+                    if (
+                        evt.key === "Enter" &&
+                        !evt.ctrlKey &&
+                        state.sidebarExpanded &&
+                        state.sidebarSelectedKind === "directory"
+                    )
+                        return "open-directory";
+                    if (
+                        evt.key === "Delete" &&
+                        evt.ctrlKey &&
+                        state.sidebarExpanded &&
+                        state.sidebarSelectedKind === "directory" &&
+                        !state.sidebarSelectedParent
+                    )
+                        return "delete-directory";
+                    if (evt.key === "A" && shift) return "apply-request";
+                    if (evt.key === "u" || evt.key === "U") return "undo";
+                    if (evt.key === "q" || evt.key === "Q") return "queue-toggle";
+                    if (evt.key === "?") return "help";
+                    if (key === "Escape") return "close";
+                    return "";
+                };
             })();
         </script>
     </head>
@@ -150,34 +214,40 @@
                 evt.preventDefault()
                 evt.stopPropagation()
             } else {
-                const key = evt.code || evt.key
-                const shift = evt.shiftKey
-                const sidebarDirBlocked = $sidebarExpanded && $sidebarSelectedKind === 'directory' && $currentPath === '/'
-                const canPrev = !$sidebarExpanded ? $counterImageIndex > 1 : $sidebarSelectedIndex > 0
-                const canNext = !$sidebarExpanded ? $counterImageIndex < $counterImageTotal : $sidebarSelectedIndex < ($sidebarListLen - 1)
+                const action = window.piclrResolveAppAction?.(evt, {
+                    sidebarExpanded: $sidebarExpanded,
+                    sidebarSelectedKind: $sidebarSelectedKind,
+                    sidebarSelectedParent: $sidebarSelectedParent,
+                    sidebarSelectedIndex: $sidebarSelectedIndex,
+                    sidebarListLen: $sidebarListLen,
+                    currentPath: $currentPath,
+                    counterImageIndex: $counterImageIndex,
+                    counterImageTotal: $counterImageTotal,
+                    queueSelected: $queueSelected
+                }) || ''
 
-                if (shift && (key === 'ArrowUp' || evt.key === 'K')) { evt.preventDefault(); @post('/cmd/queue/prev') }
-                else if (shift && (key === 'ArrowDown' || evt.key === 'J')) { evt.preventDefault(); @post('/cmd/queue/next') }
-                else if (shift && (key === 'ArrowLeft' || evt.key === 'H') && $queueSelected) { evt.preventDefault(); @post('/cmd/queue/remove-selected') }
-                else if (shift && (key === 'ArrowRight' || evt.key === 'L') && $queueSelected) { evt.preventDefault(); if (window.confirm('Apply selected queued action now?')) { @post('/cmd/queue/apply-selected') } }
-                else if (key === 'BracketRight' || evt.key === ']') { evt.preventDefault(); @post('/cmd/jump-next') }
-                else if (key === 'BracketLeft' || evt.key === '[') { evt.preventDefault(); @post('/cmd/jump-prev') }
-                else if ((key === 'ArrowLeft' || evt.key === 'h' || evt.key === 'H') && !sidebarDirBlocked) { evt.preventDefault(); @post('/cmd/left') }
-                else if (key === 'ArrowRight' || evt.key === 'l' || evt.key === 'L') { evt.preventDefault(); @post('/cmd/right') }
-                else if ((key === 'ArrowUp' || evt.key === 'k' || evt.key === 'K') && canPrev) { evt.preventDefault(); @post('/cmd/prev') }
-                else if ((key === 'ArrowDown' || evt.key === 'j' || evt.key === 'J') && canNext) { evt.preventDefault(); @post('/cmd/next') }
-                else if (key === 'Home') { evt.preventDefault(); @post('/cmd/home') }
-                else if (key === 'End') { evt.preventDefault(); @post('/cmd/end') }
-                else if (evt.key === 'i' || evt.key === 'I') { evt.preventDefault(); @post('/cmd/sidebar/toggle') }
-                else if ((evt.key === 'o' || evt.key === 'O') && evt.ctrlKey) { evt.preventDefault(); @post('/cmd/sidebar/toggle') }
-                else if (evt.key === 'Enter' && evt.ctrlKey && $sidebarExpanded && $sidebarSelectedKind === 'directory' && !$sidebarSelectedParent) { evt.preventDefault(); window.piclrPromptRenameDirectory?.() }
-                else if (evt.key === 'Enter' && !evt.ctrlKey && $sidebarExpanded && $sidebarSelectedKind === 'directory') { evt.preventDefault(); @post('/cmd/sidebar/open') }
-                else if (evt.key === 'Delete' && evt.ctrlKey && $sidebarExpanded && $sidebarSelectedKind === 'directory' && !$sidebarSelectedParent) { evt.preventDefault(); @post('/cmd/sidebar/delete') }
-                else if (evt.key === 'A' && shift) { evt.preventDefault(); @post('/cmd/apply/request') }
-                else if (evt.key === 'u' || evt.key === 'U') { evt.preventDefault(); @post('/cmd/undo') }
-                else if (evt.key === 'q' || evt.key === 'Q') { evt.preventDefault(); @post('/cmd/queue/show') }
-                else if (evt.key === '?') { evt.preventDefault(); @post('/cmd/help') }
-                else if (key === 'Escape') { evt.preventDefault(); @post('/cmd/close') }
+                if (!action) {
+                } else if (action === 'queue-prev') { evt.preventDefault(); @post('/cmd/queue/prev') }
+                else if (action === 'queue-next') { evt.preventDefault(); @post('/cmd/queue/next') }
+                else if (action === 'queue-remove-selected') { evt.preventDefault(); @post('/cmd/queue/remove-selected') }
+                else if (action === 'queue-apply-selected') { evt.preventDefault(); if (window.confirm('Apply selected queued action now?')) { @post('/cmd/queue/apply-selected') } }
+                else if (action === 'jump-next') { evt.preventDefault(); @post('/cmd/jump-next') }
+                else if (action === 'jump-prev') { evt.preventDefault(); @post('/cmd/jump-prev') }
+                else if (action === 'left') { evt.preventDefault(); @post('/cmd/left') }
+                else if (action === 'right') { evt.preventDefault(); @post('/cmd/right') }
+                else if (action === 'prev') { evt.preventDefault(); @post('/cmd/prev') }
+                else if (action === 'next') { evt.preventDefault(); @post('/cmd/next') }
+                else if (action === 'home') { evt.preventDefault(); @post('/cmd/home') }
+                else if (action === 'end') { evt.preventDefault(); @post('/cmd/end') }
+                else if (action === 'toggle-sidebar') { evt.preventDefault(); @post('/cmd/sidebar/toggle') }
+                else if (action === 'rename-directory') { evt.preventDefault(); window.piclrPromptRenameDirectory?.() }
+                else if (action === 'open-directory') { evt.preventDefault(); @post('/cmd/sidebar/open') }
+                else if (action === 'delete-directory') { evt.preventDefault(); @post('/cmd/sidebar/delete') }
+                else if (action === 'apply-request') { evt.preventDefault(); @post('/cmd/apply/request') }
+                else if (action === 'undo') { evt.preventDefault(); @post('/cmd/undo') }
+                else if (action === 'queue-toggle') { evt.preventDefault(); @post('/cmd/queue/show') }
+                else if (action === 'help') { evt.preventDefault(); @post('/cmd/help') }
+                else if (action === 'close') { evt.preventDefault(); @post('/cmd/close') }
             }
         "
     >
