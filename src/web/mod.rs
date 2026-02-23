@@ -1487,69 +1487,8 @@ async fn build_view(ctx: &AppContext) -> AppView {
         None
     };
 
-    let mut queue_items: Vec<QueueItem> = state
-        .queued_ids
-        .iter()
-        .filter_map(|queued_id| state.images.iter().find(|image| image.id == *queued_id))
-        .filter_map(|image| {
-            image.queued_action.as_ref()?;
-            Some(queue_item_from_action(image, decision_side(image), state.root_dir.as_ref()))
-        })
-        .collect();
-    for item in &mut queue_items {
-        item.selected = Some(item.image_id) == queue_selected_id;
-        item.peer_active = !item.selected
-            && !state.queue_focus
-            && Some(item.image_id) == state.current().map(|image| image.id);
-    }
-    let sidebar_items = state
-        .nav_entries
-        .iter()
-        .map(|entry| {
-            let item = match entry.kind {
-                NavEntryKind::Directory => SidebarItem {
-                    entry_id: entry.id,
-                    entry_kind: "directory".to_string(),
-                    status_kind: "none".to_string(),
-                    action_tone: "neutral".to_string(),
-                    file_label: entry.label.clone(),
-                    selected: sidebar_selected_id == Some(entry.id),
-                    peer_active: false,
-                    is_parent_link: entry.is_parent_link,
-                    path_hint: entry.rel_path.to_string_lossy().to_string(),
-                },
-                NavEntryKind::File => {
-                    let image = state
-                        .images
-                        .iter()
-                        .find(|image| Some(image.id) == entry.image_id)
-                        .expect("nav file entry must reference image");
-                    let queue_item = match &image.decision {
-                        crate::domain::DecisionState::Decided { side, .. } => {
-                            queue_item_from_action(image, Some(*side), state.root_dir.as_ref())
-                        }
-                        crate::domain::DecisionState::Undecided => {
-                            queue_item_none(image, state.root_dir.as_ref())
-                        }
-                    };
-                    SidebarItem {
-                        entry_id: entry.id,
-                        entry_kind: "file".to_string(),
-                        status_kind: queue_item.status_kind,
-                        action_tone: queue_item.action_tone,
-                        file_label: entry.label.clone(),
-                        selected: sidebar_selected_id == Some(entry.id),
-                        peer_active: state.queue_focus
-                            && sidebar_selected_id != Some(entry.id)
-                            && state.selected_queue_image_id == Some(image.id),
-                        is_parent_link: false,
-                        path_hint: entry.rel_path.to_string_lossy().to_string(),
-                    }
-                }
-            };
-            item
-        })
-        .collect::<Vec<_>>();
+    let queue_items = build_queue_items(state, queue_selected_id);
+    let sidebar_items = build_sidebar_items(state, sidebar_selected_id);
     let image_stack = ImageStackProjection {
         cards: build_stack_cards_in_range(state, projection.stack_start, projection.stack_end),
         cursor: state.cursor,
@@ -1580,6 +1519,78 @@ async fn build_view(ctx: &AppContext) -> AppView {
         apply_errors: last_apply_result.map(|r| r.errors).unwrap_or_default(),
         queue_items,
     }
+}
+
+fn build_queue_items(
+    state: &crate::domain::state::AppStateInner,
+    queue_selected_id: Option<u64>,
+) -> Vec<QueueItem> {
+    let current_id = state.current().map(|image| image.id);
+    let mut queue_items: Vec<QueueItem> = state
+        .queued_ids
+        .iter()
+        .filter_map(|queued_id| state.images.iter().find(|image| image.id == *queued_id))
+        .filter_map(|image| {
+            image.queued_action.as_ref()?;
+            Some(queue_item_from_action(image, decision_side(image), state.root_dir.as_ref()))
+        })
+        .collect();
+    for item in &mut queue_items {
+        item.selected = Some(item.image_id) == queue_selected_id;
+        item.peer_active = !item.selected && !state.queue_focus && Some(item.image_id) == current_id;
+    }
+    queue_items
+}
+
+fn build_sidebar_items(
+    state: &crate::domain::state::AppStateInner,
+    sidebar_selected_id: Option<u64>,
+) -> Vec<SidebarItem> {
+    state
+        .nav_entries
+        .iter()
+        .map(|entry| match entry.kind {
+            NavEntryKind::Directory => SidebarItem {
+                entry_id: entry.id,
+                entry_kind: "directory".to_string(),
+                status_kind: "none".to_string(),
+                action_tone: "neutral".to_string(),
+                file_label: entry.label.clone(),
+                selected: sidebar_selected_id == Some(entry.id),
+                peer_active: false,
+                is_parent_link: entry.is_parent_link,
+                path_hint: entry.rel_path.to_string_lossy().to_string(),
+            },
+            NavEntryKind::File => {
+                let image = state
+                    .images
+                    .iter()
+                    .find(|image| Some(image.id) == entry.image_id)
+                    .expect("nav file entry must reference image");
+                let queue_item = match &image.decision {
+                    crate::domain::DecisionState::Decided { side, .. } => {
+                        queue_item_from_action(image, Some(*side), state.root_dir.as_ref())
+                    }
+                    crate::domain::DecisionState::Undecided => {
+                        queue_item_none(image, state.root_dir.as_ref())
+                    }
+                };
+                SidebarItem {
+                    entry_id: entry.id,
+                    entry_kind: "file".to_string(),
+                    status_kind: queue_item.status_kind,
+                    action_tone: queue_item.action_tone,
+                    file_label: entry.label.clone(),
+                    selected: sidebar_selected_id == Some(entry.id),
+                    peer_active: state.queue_focus
+                        && sidebar_selected_id != Some(entry.id)
+                        && state.selected_queue_image_id == Some(image.id),
+                    is_parent_link: false,
+                    path_hint: entry.rel_path.to_string_lossy().to_string(),
+                }
+            }
+        })
+        .collect::<Vec<_>>()
 }
 
 #[derive(Clone, Debug)]
