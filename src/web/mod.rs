@@ -192,7 +192,7 @@ async fn cmd_left(State(state): State<WebState>) -> impl IntoResponse {
         attempt_directory_change(&state.ctx, path).await;
     } else if selected_directory {
         let ctx = state.ctx.clone();
-        broadcast_patch(&ctx, UiPatch::VIEWER_AND_SIGNALS).await;
+        broadcast_viewer_and_signals(&ctx).await;
     } else {
         let ctx = state.ctx.clone();
         apply_decision(ctx, DecisionSide::Left).await;
@@ -243,7 +243,7 @@ async fn cmd_next(State(state): State<WebState>) -> impl IntoResponse {
     }
     drop(guard);
     let ctx = state.ctx.clone();
-    broadcast_patch(&ctx, navigation_patch(&ctx).await).await;
+    broadcast_navigation(&ctx).await;
     StatusCode::NO_CONTENT
 }
 
@@ -258,7 +258,7 @@ async fn cmd_prev(State(state): State<WebState>) -> impl IntoResponse {
     }
     drop(guard);
     let ctx = state.ctx.clone();
-    broadcast_patch(&ctx, navigation_patch(&ctx).await).await;
+    broadcast_navigation(&ctx).await;
     StatusCode::NO_CONTENT
 }
 
@@ -267,7 +267,7 @@ async fn cmd_jump_next(State(state): State<WebState>) -> impl IntoResponse {
     guard.state_mut().jump_next_undecided();
     drop(guard);
     let ctx = state.ctx.clone();
-    broadcast_patch(&ctx, navigation_patch(&ctx).await).await;
+    broadcast_navigation(&ctx).await;
     StatusCode::NO_CONTENT
 }
 
@@ -276,7 +276,7 @@ async fn cmd_jump_prev(State(state): State<WebState>) -> impl IntoResponse {
     guard.state_mut().jump_prev_undecided();
     drop(guard);
     let ctx = state.ctx.clone();
-    broadcast_patch(&ctx, navigation_patch(&ctx).await).await;
+    broadcast_navigation(&ctx).await;
     StatusCode::NO_CONTENT
 }
 
@@ -293,7 +293,7 @@ async fn cmd_home(State(state): State<WebState>) -> impl IntoResponse {
     }
     drop(guard);
     let ctx = state.ctx.clone();
-    broadcast_patch(&ctx, navigation_patch(&ctx).await).await;
+    broadcast_navigation(&ctx).await;
     StatusCode::NO_CONTENT
 }
 
@@ -310,7 +310,7 @@ async fn cmd_end(State(state): State<WebState>) -> impl IntoResponse {
     }
     drop(guard);
     let ctx = state.ctx.clone();
-    broadcast_patch(&ctx, navigation_patch(&ctx).await).await;
+    broadcast_navigation(&ctx).await;
     StatusCode::NO_CONTENT
 }
 
@@ -331,7 +331,7 @@ async fn cmd_undo(State(state): State<WebState>) -> impl IntoResponse {
     }
 
     let ctx = state.ctx.clone();
-    broadcast_patch(&ctx, navigation_patch(&ctx).await).await;
+    broadcast_navigation(&ctx).await;
     if undone_image_id != 0 {
         patch_stack_card_if_visible(&ctx, undone_image_id).await;
     }
@@ -419,7 +419,7 @@ async fn move_queue_selection(state: &WebState, forward: bool) -> StatusCode {
     }
     drop(guard);
     let ctx = state.ctx.clone();
-    broadcast_patch(&ctx, navigation_patch(&ctx).await).await;
+    broadcast_navigation(&ctx).await;
     StatusCode::NO_CONTENT
 }
 
@@ -429,7 +429,7 @@ async fn cmd_queue_select(State(state): State<WebState>, Path(id): Path<u64>) ->
     let selected = activate_queue_item_selection(app_state, id);
     drop(guard);
     let ctx = state.ctx.clone();
-    broadcast_patch(&ctx, navigation_patch(&ctx).await).await;
+    broadcast_navigation(&ctx).await;
     if selected {
         StatusCode::NO_CONTENT
     } else {
@@ -496,7 +496,7 @@ async fn cmd_queue_remove_selected(State(state): State<WebState>) -> impl IntoRe
         return StatusCode::NO_CONTENT;
     };
     let ctx = state.ctx.clone();
-    broadcast_patch(&ctx, navigation_patch(&ctx).await).await;
+    broadcast_navigation(&ctx).await;
     patch_stack_card_if_visible(&ctx, image_id).await;
     StatusCode::NO_CONTENT
 }
@@ -587,7 +587,7 @@ async fn cmd_toggle_sidebar(State(state): State<WebState>) -> impl IntoResponse 
     guard.state_mut().close_directory_actions();
     drop(guard);
     let ctx = state.ctx.clone();
-    broadcast_patch(&ctx, UiPatch::VIEWER_AND_SIGNALS).await;
+    broadcast_viewer_and_signals(&ctx).await;
     StatusCode::NO_CONTENT
 }
 
@@ -628,7 +628,7 @@ async fn cmd_sidebar_open(State(state): State<WebState>) -> impl IntoResponse {
         attempt_directory_change(&state.ctx, path).await;
     } else {
         let ctx = state.ctx.clone();
-        broadcast_patch(&ctx, UiPatch::VIEWER_AND_SIGNALS).await;
+        broadcast_viewer_and_signals(&ctx).await;
     }
     StatusCode::NO_CONTENT
 }
@@ -689,7 +689,7 @@ async fn cmd_sidebar_open_parent(State(state): State<WebState>) -> impl IntoResp
         attempt_directory_change(&state.ctx, path).await;
     } else {
         let ctx = state.ctx.clone();
-        broadcast_patch(&ctx, UiPatch::VIEWER_AND_SIGNALS).await;
+        broadcast_viewer_and_signals(&ctx).await;
     }
     StatusCode::NO_CONTENT
 }
@@ -788,7 +788,7 @@ async fn cmd_sidebar_rename(
         run_scan(&state.ctx, current_dir).await;
     }
     let ctx = state.ctx.clone();
-    broadcast_patch(&ctx, UiPatch::VIEWER_AND_SIGNALS).await;
+    broadcast_viewer_and_signals(&ctx).await;
     StatusCode::NO_CONTENT
 }
 
@@ -854,7 +854,7 @@ async fn cmd_show_queue(State(state): State<WebState>) -> impl IntoResponse {
     app_state.toggle_queue_sidebar();
     drop(guard);
     let ctx = state.ctx.clone();
-    broadcast_patch(&ctx, UiPatch::VIEWER_AND_SIGNALS).await;
+    broadcast_viewer_and_signals(&ctx).await;
     StatusCode::NO_CONTENT
 }
 
@@ -905,7 +905,7 @@ async fn cmd_sidebar_open_entry(
         attempt_directory_change(&state.ctx, path).await;
     } else {
         let ctx = state.ctx.clone();
-        broadcast_patch(&ctx, UiPatch::VIEWER_AND_SIGNALS).await;
+        broadcast_viewer_and_signals(&ctx).await;
     }
     StatusCode::NO_CONTENT
 }
@@ -996,7 +996,7 @@ async fn apply_decision(ctx: AppContext, side: DecisionSide) {
         guard.state_mut().record_undo(undo);
     }
 
-    broadcast_patch(&ctx, navigation_patch(&ctx).await).await;
+    broadcast_navigation(&ctx).await;
     if let Some(image_id) = changed_image_id {
         patch_stack_card_if_visible(&ctx, image_id).await;
     }
@@ -1227,6 +1227,15 @@ async fn broadcast_patch(ctx: &AppContext, patch: UiPatch) {
     for event in events {
         let _ = ctx.sse_tx.send(event);
     }
+}
+
+async fn broadcast_navigation(ctx: &AppContext) {
+    let patch = navigation_patch(ctx).await;
+    broadcast_patch(ctx, patch).await;
+}
+
+async fn broadcast_viewer_and_signals(ctx: &AppContext) {
+    broadcast_patch(ctx, UiPatch::VIEWER_AND_SIGNALS).await;
 }
 
 async fn build_full_resync_events(ctx: &AppContext) -> Vec<Event> {
