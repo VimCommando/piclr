@@ -19,13 +19,6 @@
                     requestAnimationFrame(() => closeButton.focus({ preventScroll: true }));
                 };
 
-                window.piclrInitQueueLog = (list) => {
-                    if (!(list instanceof HTMLElement)) return;
-                    const current = list.querySelector(".log-entry-current");
-                    if (!(current instanceof HTMLElement)) return;
-                    requestAnimationFrame(() => current.scrollIntoView({ block: "center" }));
-                };
-
                 window.piclrInitQueueSidebarList = (list) => {
                     if (!(list instanceof HTMLElement)) return;
                     const current = list.querySelector(".log-entry-current");
@@ -70,7 +63,7 @@
                     if (typeof selected !== "string" || selected.trim().length === 0) {
                         return;
                     }
-                    await fetch("/cmd/sidebar/root/select", {
+                    await fetch("/cmd/files/root/select", {
                         method: "POST",
                         headers: { "content-type": "application/json" },
                         body: JSON.stringify({ path: selected }),
@@ -239,10 +232,10 @@
                 else if (action === 'next') { evt.preventDefault(); @post('/cmd/next') }
                 else if (action === 'home') { evt.preventDefault(); @post('/cmd/home') }
                 else if (action === 'end') { evt.preventDefault(); @post('/cmd/end') }
-                else if (action === 'toggle-sidebar') { evt.preventDefault(); @post('/cmd/sidebar/toggle') }
+                else if (action === 'toggle-sidebar') { evt.preventDefault(); @post('/cmd/files/toggle') }
                 else if (action === 'rename-directory') { evt.preventDefault(); window.piclrPromptRenameDirectory?.() }
-                else if (action === 'open-directory') { evt.preventDefault(); @post('/cmd/sidebar/open') }
-                else if (action === 'delete-directory') { evt.preventDefault(); @post('/cmd/sidebar/delete') }
+                else if (action === 'open-directory') { evt.preventDefault(); @post('/cmd/files/open') }
+                else if (action === 'delete-directory') { evt.preventDefault(); @post('/cmd/files/delete') }
                 else if (action === 'apply-request') { evt.preventDefault(); @post('/cmd/apply/request') }
                 else if (action === 'undo') { evt.preventDefault(); @post('/cmd/undo') }
                 else if (action === 'queue-toggle') { evt.preventDefault(); @post('/cmd/queue/show') }
@@ -264,7 +257,7 @@
             type="text"
             hidden
             data-bind:directory-name
-            data-on:change="@patch('/cmd/sidebar/rename')"
+            data-on:change="@patch('/cmd/files/rename')"
         />
     </body>
 </html>

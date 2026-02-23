@@ -101,7 +101,7 @@ fn image_card_render_contains_entry_identity_and_alignment() {
     let html = render_image_card(card);
     assert!(html.contains("id=\"image-card-2\""));
     assert!(html.contains("class=\"align-right\""));
-    assert!(html.contains("src=\"/image/by-path/b.jpg\""));
+    assert!(html.contains("src=\"/image/b.jpg\""));
 }
 
 #[test]
@@ -208,6 +208,20 @@ async fn rendered_shortcuts_use_simple_posts_for_shortcuts_and_buttons() {
     assert!(html.contains("<button data-on:click=\"@post('/cmd/left')\">⬅️ Left</button>"));
     assert!(html.contains("window.piclrInitQueueSidebarList"));
     assert!(html.contains("outsideView"));
+}
+
+#[tokio::test]
+async fn rendered_shortcuts_include_shift_queue_actions_and_confirmation_flow() {
+    let ctx = AppContext::new(sample_machine(true), AppConfig::default());
+    let axum::response::Html(html) = render_full_page(&ctx).await;
+
+    assert!(html.contains("if (shift && (key === \"ArrowUp\" || evt.key === \"K\")) return \"queue-prev\";"));
+    assert!(html.contains("if (shift && (key === \"ArrowDown\" || evt.key === \"J\")) return \"queue-next\";"));
+    assert!(html.contains("if (shift && (key === \"ArrowLeft\" || evt.key === \"H\") && state.queueSelected)"));
+    assert!(html.contains("if (shift && (key === \"ArrowRight\" || evt.key === \"L\") && state.queueSelected)"));
+    assert!(html.contains("@post('/cmd/queue/remove-selected')"));
+    assert!(html.contains("window.confirm('Apply selected queued action now?')"));
+    assert!(html.contains("@post('/cmd/queue/apply-selected')"));
 }
 
 #[tokio::test]
@@ -420,7 +434,7 @@ async fn root_select_endpoint_is_forbidden_without_tauri() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/cmd/sidebar/root/select")
+                .uri("/cmd/files/root/select")
                 .header("content-type", "application/json")
                 .body(Body::from(r#"{"path":"/tmp"}"#))
                 .unwrap(),

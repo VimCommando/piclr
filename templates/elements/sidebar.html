@@ -16,12 +16,12 @@
                 <sort-glyph></sort-glyph>
             </button>
             <sort-menu data-show="$sortMenuOpen">
-                <button class="{% if view.selected_sort_mode == "name-asc" %}selected{% endif %}" data-on:click="@post('/cmd/sidebar/sort/name-asc'); $sortMenuOpen = false"><sort-option-icon class="asc"></sort-option-icon>Name</button>
-                <button class="{% if view.selected_sort_mode == "name-desc" %}selected{% endif %}" data-on:click="@post('/cmd/sidebar/sort/name-desc'); $sortMenuOpen = false"><sort-option-icon class="desc"></sort-option-icon>Name</button>
-                <button class="{% if view.selected_sort_mode == "modified-asc" %}selected{% endif %}" data-on:click="@post('/cmd/sidebar/sort/modified-asc'); $sortMenuOpen = false"><sort-option-icon class="asc"></sort-option-icon>Modified</button>
-                <button class="{% if view.selected_sort_mode == "modified-desc" %}selected{% endif %}" data-on:click="@post('/cmd/sidebar/sort/modified-desc'); $sortMenuOpen = false"><sort-option-icon class="desc"></sort-option-icon>Modified</button>
-                <button class="{% if view.selected_sort_mode == "size-asc" %}selected{% endif %}" data-on:click="@post('/cmd/sidebar/sort/size-asc'); $sortMenuOpen = false"><sort-option-icon class="asc"></sort-option-icon>Size</button>
-                <button class="{% if view.selected_sort_mode == "size-desc" %}selected{% endif %}" data-on:click="@post('/cmd/sidebar/sort/size-desc'); $sortMenuOpen = false"><sort-option-icon class="desc"></sort-option-icon>Size</button>
+                <button class="{% if view.selected_sort_mode == "name-asc" %}selected{% endif %}" data-on:click="@post('/cmd/files/sort/name-asc'); $sortMenuOpen = false"><sort-option-icon class="asc"></sort-option-icon>Name</button>
+                <button class="{% if view.selected_sort_mode == "name-desc" %}selected{% endif %}" data-on:click="@post('/cmd/files/sort/name-desc'); $sortMenuOpen = false"><sort-option-icon class="desc"></sort-option-icon>Name</button>
+                <button class="{% if view.selected_sort_mode == "modified-asc" %}selected{% endif %}" data-on:click="@post('/cmd/files/sort/modified-asc'); $sortMenuOpen = false"><sort-option-icon class="asc"></sort-option-icon>Modified</button>
+                <button class="{% if view.selected_sort_mode == "modified-desc" %}selected{% endif %}" data-on:click="@post('/cmd/files/sort/modified-desc'); $sortMenuOpen = false"><sort-option-icon class="desc"></sort-option-icon>Modified</button>
+                <button class="{% if view.selected_sort_mode == "size-asc" %}selected{% endif %}" data-on:click="@post('/cmd/files/sort/size-asc'); $sortMenuOpen = false"><sort-option-icon class="asc"></sort-option-icon>Size</button>
+                <button class="{% if view.selected_sort_mode == "size-desc" %}selected{% endif %}" data-on:click="@post('/cmd/files/sort/size-desc'); $sortMenuOpen = false"><sort-option-icon class="desc"></sort-option-icon>Size</button>
             </sort-menu>
         </sidebar-tools>
     </sidebar-header>
@@ -52,7 +52,7 @@
             data-entry-parent="{% if item.is_parent_link %}true{% else %}false{% endif %}"
             data-entry-path="{{ item.path_hint }}"
             data-on:click="@post('/cmd/select/{{ item.entry_id }}')"
-            data-on:dblclick="@post('/cmd/sidebar/open-entry/{{ item.entry_id }}')"
+            data-on:dblclick="@post('/cmd/files/open-entry/{{ item.entry_id }}')"
         >
             <entry-status>
                 {% if item.entry_kind == "directory" %}
@@ -64,9 +64,9 @@
             <entry-file>{{ item.file_label }}</entry-file>
             {% if item.entry_kind == "directory" && item.selected && !item.is_parent_link %}
             <row-actions>
-                <button title="Open" data-on:click__stop="@post('/cmd/sidebar/open')">➡️</button>
+                <button title="Open" data-on:click__stop="@post('/cmd/files/open')">➡️</button>
                 <button title="Rename" data-on:click__stop="window.piclrPromptRenameDirectory?.()">✏️</button>
-                <button title="Delete" data-on:click__stop="@post('/cmd/sidebar/delete')">🗑️</button>
+                <button title="Delete" data-on:click__stop="@post('/cmd/files/delete')">🗑️</button>
             </row-actions>
             {% endif %}
         </entry-line>

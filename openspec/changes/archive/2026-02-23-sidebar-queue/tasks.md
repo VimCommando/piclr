@@ -9,8 +9,8 @@
 
 - [x] 2.1 Introduce explicit queue-selected focus state to gate queue-specific key behavior
 - [x] 2.2 Implement Home/End key handling to jump queue selection to first/last item
-- [x] 2.3 Implement Left/Right override behavior that rewrites the selected queue item's action to the configured left/right action
-- [x] 2.4 Implement contextual `u` behavior: remove selected queue item in queue focus, otherwise pop from the global action stack
+- [x] 2.3 Implement Shift-based queue editing shortcuts: Shift+Up/Down move queue selection, Shift+Right applies selected item with confirmation, Shift+Left removes selected item
+- [x] 2.4 Keep `u` behavior global: pressing `u` pops from the action stack regardless of queue selection
 
 ## 3. Scrolling and Long-List Usability
 
@@ -20,6 +20,6 @@
 ## 4. Validation and Regression Coverage
 
 - [x] 4.1 Add or update tests for queue sidebar visibility toggles (`q` and queue icon) and non-modal rendering
-- [x] 4.2 Add or update tests for Home/End jumps, Left/Right overrides, and selected-row apply/undo affordances
-- [x] 4.3 Add or update tests for contextual `u` behavior (queue-selected remove vs non-selected stack pop)
+- [x] 4.2 Add or update tests for Home/End jumps, Shift-based queue actions, and selected-row apply/undo affordances
+- [x] 4.3 Add or update tests for global `u` stack-pop behavior and queue removal via explicit queue action controls
 - [x] 4.4 Add or update tests for follow-selection scrolling behavior on long queue lists

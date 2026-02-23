@@ -30,7 +30,7 @@ The system MUST allow move actions to target user-defined paths and MUST default
 - **THEN** the file is moved to a `keep/` subdirectory under the current directory
 
 ### Requirement: Queue mode with one action per image
-The system MUST support an optional queue mode where each image has at most one queued action, and a new decision replaces any prior queued action for that image. The queue/window representation for queued items MUST use ordered deque semantics, and queue order MUST be the source of truth for window membership and eviction order.
+The system MUST support an optional queue mode where each image has at most one queued action, and a new decision replaces any prior queued action for that image. The queue representation MUST be an ordered list used as the source of truth for execution order and queue selection behavior. When queue mode is enabled, the selected queue item MUST support keyboard-first editing, including Home/End jumps, follow-selection scrolling for long lists, Shift+Up/Down selection movement, and Shift-modified per-item actions (Shift+Right apply selected with confirmation, Shift+Left remove selected).
 
 #### Scenario: Replace a queued action
 - **WHEN** queue mode is enabled and the user changes an image decision
@@ -39,6 +39,26 @@ The system MUST support an optional queue mode where each image has at most one 
 #### Scenario: Window updates use deque ordering
 - **WHEN** a queue-window update adds an item at one end and the window exceeds its maximum size
 - **THEN** the system evicts one item from the opposite end and preserves deterministic ordering in the remaining window
+
+#### Scenario: Home and End jump queue selection
+- **WHEN** the queue list is selected and the user presses Home or End
+- **THEN** selection jumps to the first or last queue item respectively
+
+#### Scenario: Selected item stays visible during keyboard navigation
+- **WHEN** the queue list contains more items than fit in the viewport and queue selection changes
+- **THEN** the queue scroll position updates to keep the selected item visible
+
+#### Scenario: Shift+Up and Shift+Down move queue selection
+- **WHEN** the user presses Shift+Up or Shift+Down
+- **THEN** queue selection moves to the previous or next queue item
+
+#### Scenario: Shift+Right applies selected queued action
+- **WHEN** a queue item is selected and the user presses Shift+Right
+- **THEN** the app asks for confirmation and applies only the selected queued action
+
+#### Scenario: Shift+Left removes selected queued action
+- **WHEN** a queue item is selected and the user presses Shift+Left
+- **THEN** the selected queue item is removed from the queue list
 
 ### Requirement: Apply actions immediately when queue mode is disabled
 The system MUST apply actions immediately when queue mode is disabled.
@@ -59,11 +79,15 @@ The system MUST apply all queued actions when the user triggers the apply-at-end
 - **THEN** apply-at-end executes actions in that same order
 
 ### Requirement: Undo last command
-The system MUST support undoing the most recent command, reversing its effect on image decision state and queue/application.
+The system MUST support undoing the most recent command, reversing its effect on image decision state and queue/application. Pressing `u` MUST pop the most recent item from the global action stack regardless of queue selection state.
 
 #### Scenario: Undo last decision
 - **WHEN** the user triggers undo after a decision
 - **THEN** the previous image decision state is restored
+
+#### Scenario: Undo pops action stack
+- **WHEN** the user presses `u`
+- **THEN** the most recent action-stack item is popped and undone
 
 ### Requirement: Safe delete with confirmation
 The system MUST treat delete as a safe delete by default by moving files to a `trash/` subdirectory under the current directory, and MUST require explicit confirmation before any permanent deletion during apply-at-end when destructive deletion is enabled.
@@ -92,4 +116,3 @@ The system MUST maintain cache-window state from a single ordered queue represen
 #### Scenario: Derive window from queue
 - **WHEN** the queue state is updated
 - **THEN** the cache window is derived directly from queue order and configured window bounds
-

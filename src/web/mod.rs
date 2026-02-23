@@ -113,7 +113,7 @@ pub fn router(ctx: AppContext) -> Router {
         .route("/assets/app.css", get(app_css))
         .route("/assets/datastar.js", get(datastar_js))
         .route("/cmd/apply", post(cmd::queue::apply))
-        .route("/cmd/apply-confirm", post(cmd::queue::apply_confirm))
+        .route("/cmd/apply/confirm", post(cmd::queue::apply_confirm))
         .route("/cmd/apply/request", post(cmd::queue::apply_request))
         .route("/cmd/close", post(cmd::close))
         .route("/cmd/end", post(cmd::end))
@@ -142,37 +142,36 @@ pub fn router(ctx: AppContext) -> Router {
         .route("/cmd/right", post(cmd::right))
         .route("/cmd/select/{id}", post(cmd::select))
         .route(
-            "/cmd/sidebar/change-directory/apply",
+            "/cmd/files/change-directory/apply",
             post(cmd::files::change_directory_apply),
         )
         .route(
-            "/cmd/sidebar/change-directory/cancel",
+            "/cmd/files/change-directory/cancel",
             post(cmd::files::change_directory_cancel),
         )
         .route(
-            "/cmd/sidebar/change-directory/clear",
+            "/cmd/files/change-directory/clear",
             post(cmd::files::change_directory_clear),
         )
-        .route("/cmd/sidebar/delete", post(cmd::files::delete_request))
+        .route("/cmd/files/delete", post(cmd::files::delete_request))
         .route(
-            "/cmd/sidebar/delete/confirm",
+            "/cmd/files/delete/confirm",
             post(cmd::files::delete_confirm),
         )
-        .route("/cmd/sidebar/open", post(cmd::files::open))
+        .route("/cmd/files/open", post(cmd::files::open))
         .route(
-            "/cmd/sidebar/open-entry/{id}",
+            "/cmd/files/open-entry/{id}",
             post(cmd::files::open_entry),
         )
-        .route("/cmd/sidebar/open-parent", post(cmd::files::open_parent))
-        .route("/cmd/sidebar/rename", patch(cmd::files::rename))
-        .route("/cmd/sidebar/root/select", post(cmd::files::root_select))
-        .route("/cmd/sidebar/sort/{mode}", post(cmd::files::sort))
-        .route("/cmd/sidebar/toggle", post(cmd::files::toggle))
+        .route("/cmd/files/open-parent", post(cmd::files::open_parent))
+        .route("/cmd/files/rename", patch(cmd::files::rename))
+        .route("/cmd/files/root/select", post(cmd::files::root_select))
+        .route("/cmd/files/sort/{mode}", post(cmd::files::sort))
+        .route("/cmd/files/toggle", post(cmd::files::toggle))
         .route("/cmd/undo", post(cmd::undo))
         .route("/events", get(events))
         .route("/favicon.ico", get(favicon_ico))
-        .route("/image/by-path/{rel}", get(image_by_rel_path))
-        .route("/image/{id}", get(image))
+        .route("/image/{path}", get(image_by_path))
         .with_state(state)
 }
 
@@ -413,34 +412,8 @@ async fn attempt_directory_change(ctx: &AppContext, target_path: PathBuf) {
     }
 }
 
-async fn image(State(state): State<WebState>, Path(id): Path<u64>) -> Response {
-    let image_path = {
-        let guard = state.ctx.state.read().await;
-        guard
-            .state()
-            .images
-            .iter()
-            .find(|image| image.id == id)
-            .map(|image| image.path.clone())
-    };
-
-    let Some(path) = image_path else {
-        return StatusCode::NOT_FOUND.into_response();
-    };
-
-    let bytes = match load_image_bytes(&path).await {
-        Ok(bytes) => Bytes::from(bytes),
-        Err(err) => {
-            warn!(%err, path = %path.display(), "Failed to read image");
-            return StatusCode::NOT_FOUND.into_response();
-        }
-    };
-
-    bytes_response(&path, bytes)
-}
-
-async fn image_by_rel_path(State(state): State<WebState>, Path(rel): Path<String>) -> Response {
-    let decoded = match urlencoding::decode(&rel) {
+async fn image_by_path(State(state): State<WebState>, Path(path): Path<String>) -> Response {
+    let decoded = match urlencoding::decode(&path) {
         Ok(value) => value.into_owned(),
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
@@ -1075,7 +1048,7 @@ fn image_src_for(image: &ImageEntry, root_dir: Option<&PathBuf>) -> String {
         .unwrap_or(&image.path)
         .to_string_lossy()
         .to_string();
-    format!("/image/by-path/{}", urlencoding::encode(&rel))
+    format!("/image/{}", urlencoding::encode(&rel))
 }
 
 fn file_label_for_image(image: &ImageEntry, root_dir: Option<&PathBuf>) -> String {

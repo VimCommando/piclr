@@ -12,7 +12,7 @@ Constraints:
 **Goals:**
 - Replace queue modal with a slide-out sidebar list that can be toggled from keyboard and UI icon.
 - Place queue action controls at the top of the queue list, mirroring file-list control placement.
-- Provide efficient keyboard editing for long queues (scroll follow, Home/End, contextual undo, action override).
+- Provide efficient keyboard editing for long queues (scroll follow, Home/End, Shift-based queue navigation and item actions).
 - Make selected queue-item actions explicit via apply/undo icons.
 
 **Non-Goals:**
@@ -27,7 +27,7 @@ Rationale: keeps queue visible alongside current image context and aligns with e
 Alternative considered: keep modal and add shortcuts; rejected because it preserves context switching and inconsistent layout model.
 
 - Treat queue selection as a first-class focus mode with dedicated key semantics.
-Rationale: requirements include different `u` behavior when queue is selected vs not selected, plus Home/End and Left/Right override behavior tied to queue selection.
+Rationale: requirements include Home/End behavior tied to queue selection plus Shift-modified queue actions (move/apply/remove) that avoid conflicts with global left/right image actions.
 Alternative considered: global keys only; rejected because behavior would be ambiguous without explicit queue focus context.
 
 - Render selected-row affordances (apply/undo icons) inline on the selected item only.
@@ -40,14 +40,14 @@ Alternative considered: no auto-scroll with optional jump key only; rejected bec
 
 ## Risks / Trade-offs
 
-- [Keybinding conflicts] Queue-specific Left/Right and `u` semantics may conflict with existing global actions if focus state is not explicit.
-  → Mitigation: gate behavior by queue-selected state and preserve existing stack undo when queue is not selected.
+- [Keybinding conflicts] Queue-specific actions can conflict with existing global image actions.
+  → Mitigation: reserve queue item actions for Shift-modified bindings and keep plain Left/Right mapped to global image actions.
 
 - [UI state complexity] Queue visibility and selection state can desynchronize under rapid input.
   → Mitigation: centralize queue UI state transitions and drive rendering from single reactive source of truth.
 
-- [Regression in undo behavior] Users may expect old undo behavior everywhere.
-  → Mitigation: keep stack-pop behavior unchanged outside queue selection and document contextual behavior in UI/help text.
+- [Regression in undo behavior] Users may expect queue-focused `u` to remove queue items.
+  → Mitigation: keep `u` behavior globally consistent as stack undo and use explicit queue remove controls (button and Shift+Left).
 
 - [Long-list performance] Auto-scroll on every selection move could cause jitter.
   → Mitigation: scroll only when selected row leaves viewport bounds and use nearest-edge alignment.

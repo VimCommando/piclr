@@ -1,16 +1,16 @@
 <modal-confirm
     id="modal"
     data-init="window.piclrInitModal?.(document.getElementById('modal'))"
-    data-on:click="if (evt.target === evt.currentTarget || evt.target.tagName === 'MODAL-BACKDROP') { @post('/cmd/sidebar/change-directory/cancel') }"
+    data-on:click="if (evt.target === evt.currentTarget || evt.target.tagName === 'MODAL-BACKDROP') { @post('/cmd/files/change-directory/cancel') }"
 >
     <modal-backdrop></modal-backdrop>
     <modal-card>
         <h2>⚠️ Queue is not empty</h2>
         <p>Choose how to proceed before changing directories.</p>
         <command-list>
-            <button autofocus data-on:click="@post('/cmd/sidebar/change-directory/clear')">Clear</button>
-            <button data-on:click="@post('/cmd/sidebar/change-directory/apply')">Apply</button>
-            <button data-on:click="@post('/cmd/sidebar/change-directory/cancel')">Cancel</button>
+            <button autofocus data-on:click="@post('/cmd/files/change-directory/clear')">Clear</button>
+            <button data-on:click="@post('/cmd/files/change-directory/apply')">Apply</button>
+            <button data-on:click="@post('/cmd/files/change-directory/cancel')">Cancel</button>
         </command-list>
     </modal-card>
 </modal-confirm>

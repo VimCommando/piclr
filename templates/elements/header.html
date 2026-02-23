@@ -1,9 +1,9 @@
 <header id="header">
     <section aria-label="Directory">
-        <button id="directory-select" type="button" title="Toggle sidebar" data-on:click="@post('/cmd/sidebar/toggle')">
+        <button id="directory-select" type="button" title="Toggle sidebar" data-on:click="@post('/cmd/files/toggle')">
             <glyph>📁</glyph>
         </button>
-        <button data-on:click="@post('/cmd/sidebar/toggle')">
+        <button data-on:click="@post('/cmd/files/toggle')">
             <span data-text="$counterImageIndex"></span> /
             <span data-text="$counterImageTotal"></span>
         </button>

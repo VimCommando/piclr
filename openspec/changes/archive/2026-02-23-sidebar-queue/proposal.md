@@ -10,10 +10,11 @@ The queue currently uses a modal that interrupts navigation flow and diverges fr
 - Show "apply" and "undo" icons on the selected queue item for clear per-item action affordances.
 - Keep the selected queue item in view by auto-scrolling on long lists.
 - Add Home/End behavior to jump queue selection to first/last item.
-- Allow Left/Right actions to override the current action on the selected queue item.
-- Update undo behavior:
-- `u` when queue is selected removes the selected queue item.
-- `u` when queue is not selected pops items from the action stack.
+- Add Shift-based queue editing shortcuts:
+- Shift+Up/Down moves queue selection.
+- Shift+Right confirms and applies only the selected queued action.
+- Shift+Left removes the selected queued action.
+- Keep `u` as a consistent global undo that pops the action stack regardless of queue selection.
 
 ## Capabilities
 
@@ -21,7 +22,7 @@ The queue currently uses a modal that interrupts navigation flow and diverges fr
 - `queue-sidebar-layout`: Queue is presented and managed as an in-layout slide-out sidebar instead of a modal.
 
 ### Modified Capabilities
-- `action-queue`: Keyboard and per-item queue behaviors are expanded to support sidebar selection, scroll-follow, home/end navigation, action override, and context-sensitive undo.
+- `action-queue`: Keyboard and per-item queue behaviors are expanded to support sidebar selection, scroll-follow, home/end navigation, Shift-based queue editing shortcuts, and global stack undo semantics.
 
 ## Impact
 
