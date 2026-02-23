@@ -1,4 +1,3 @@
-
 use super::*;
 use crate::app::{AppConfig, AppContext};
 use crate::domain::undo::UndoEntry;
@@ -215,13 +214,51 @@ async fn rendered_shortcuts_include_shift_queue_actions_and_confirmation_flow() 
     let ctx = AppContext::new(sample_machine(true), AppConfig::default());
     let axum::response::Html(html) = render_full_page(&ctx).await;
 
-    assert!(html.contains("if (shift && (key === \"ArrowUp\" || evt.key === \"K\")) return \"queue-prev\";"));
-    assert!(html.contains("if (shift && (key === \"ArrowDown\" || evt.key === \"J\")) return \"queue-next\";"));
-    assert!(html.contains("if (shift && (key === \"ArrowLeft\" || evt.key === \"H\") && state.queueSelected)"));
-    assert!(html.contains("if (shift && (key === \"ArrowRight\" || evt.key === \"L\") && state.queueSelected)"));
+    assert!(html.contains(
+        "if (shift && (key === \"ArrowUp\" || evt.key === \"K\")) return \"queue-prev\";"
+    ));
+    assert!(html.contains(
+        "if (shift && (key === \"ArrowDown\" || evt.key === \"J\")) return \"queue-next\";"
+    ));
+    assert!(html.contains(
+        "if (shift && (key === \"ArrowLeft\" || evt.key === \"H\") && state.queueSelected)"
+    ));
+    assert!(html.contains(
+        "if (shift && (key === \"ArrowRight\" || evt.key === \"L\") && state.queueSelected)"
+    ));
     assert!(html.contains("@post('/cmd/queue/remove-selected')"));
     assert!(html.contains("window.confirm('Apply selected queued action now?')"));
     assert!(html.contains("@post('/cmd/queue/apply-selected')"));
+}
+
+#[cfg(feature = "tauri")]
+#[tokio::test]
+async fn tauri_render_includes_custom_window_chrome() {
+    let ctx = AppContext::new(sample_machine(true), AppConfig::default());
+    let axum::response::Html(html) = render_full_page(&ctx).await;
+
+    assert!(html.contains("<window-chrome id=\"window-chrome\">"));
+    assert!(html.contains("window.piclrWindowMinimize"));
+    assert!(html.contains("window.piclrWindowToggleMaximize"));
+    assert!(html.contains("window.piclrWindowClose"));
+    assert!(html.contains("window.piclrStartWindowDrag"));
+    assert!(html.contains("id=\"window-menu\""));
+    assert!(html.contains("Open Location"));
+    assert!(html.contains("window.piclrHandleWindowMenuAction?.('exit')"));
+    assert!(html.contains("if ((evt.key === \"o\" || evt.key === \"O\") && evt.ctrlKey)"));
+    assert!(html.contains("return \"open-location\""));
+    assert!(html.contains("return \"toggle-files\""));
+    assert!(html.contains("evt.target.closest('window-menu')"));
+    assert!(html.contains("evt.detail === 2"));
+}
+
+#[cfg(not(feature = "tauri"))]
+#[tokio::test]
+async fn web_render_omits_custom_window_chrome() {
+    let ctx = AppContext::new(sample_machine(true), AppConfig::default());
+    let axum::response::Html(html) = render_full_page(&ctx).await;
+
+    assert!(!html.contains("<window-chrome id=\"window-chrome\">"));
 }
 
 #[tokio::test]

@@ -1,12 +1,6 @@
 <sidebar-panel id="sidebar" class="{% if !view.sidebar_expanded %}collapsed{% endif %}">
     <sidebar-header>
-        <button
-            {% if view.directory_select_enabled %}
-            data-on:click="window.piclrSelectRootDirectory?.()"
-            {% else %}
-            disabled
-            {% endif %}
-        >📂 {{ view.current_path_label }}</button>
+        <path-label>📂 {{ view.current_path_label }}</path-label>
         <sidebar-tools data-signals:sort-menu-open="false">
             <button
                 class="icon-button"

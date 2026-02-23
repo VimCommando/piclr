@@ -22,7 +22,7 @@ piclr /path/to/images
 
 This will log the URL for the local web service.
 
-Run in the Tauri desktop shell (enables native folder picker and folder switching):
+Run in the Tauri desktop shell:
 
 ```bash
 cargo run --features tauri -- /path/to/images
@@ -58,7 +58,8 @@ piclr /path/to/images
 
 ### Runtime note: app vs web service
 
-- Running with `--features tauri` launches PICLR as a desktop app and supports opening/changing folders from the UI (`Ctrl+O` / folder button).
+- Running with `--features tauri` launches PICLR as a desktop app.
+- In Tauri mode, open/change root location from the titlebar menu (`Open Location`) or `Ctrl+O`.
 - Running as the web service (`piclr ...` without Tauri) does not support changing folders from inside the UI. Choose the folder when launching the command.
 
 ### Platform Build Docs
@@ -100,18 +101,19 @@ Build and run:
 cargo run --features tauri -- /path/to/images
 ```
 
+With `decorations: false`, PICLR renders an in-app Tauri-only titlebar with drag, minimize, maximize/restore, and close controls.
+
 #### Linux troubleshooting
 
 - If startup reports that no display session is detected, launch from an X11/Wayland desktop session where `DISPLAY` or `WAYLAND_DISPLAY` is set.
 - If startup reports missing WebKitGTK or GTK3 libraries, install the distro-family packages listed above and retry.
-- If `Ctrl+O` does not open a folder picker, verify you are running desktop mode (`--features tauri`) and not web-service mode.
+- If `Open Location` (menu or `Ctrl+O`) does not open a folder picker, verify you are running desktop mode (`--features tauri`) and not web-service mode.
 
 #### Linux verification checklist
 
 - Desktop shell starts and loads loopback UI in X11 session.
 - Desktop shell starts and loads loopback UI in Wayland session.
-- `Ctrl+O` opens native folder picker and selected folder replaces the active run context.
-- Header/footer folder controls mirror `Ctrl+O` behavior in desktop mode.
+- Titlebar menu `Open Location` or `Ctrl+O` opens native folder picker and selected folder replaces the active run context.
 
 ## How to use PICLR
 
@@ -154,10 +156,10 @@ By default:
 #### Modals and utility
 
 - `Q`: show queued actions
-- `I`: show image list
+- `F`: show/hide files sidebar
 - `?`: show help
 - `Esc`: close top modal
-- `Ctrl+O`: open directory (desktop app mode only)
+- `Ctrl+O`: open location (desktop app mode only)
 
 You can also use the footer/header buttons for the same commands.
 

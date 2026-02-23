@@ -9,7 +9,87 @@
         <script type="module" src="/assets/datastar.js"></script>
         <script>
             (() => {
-                const directorySelectionEnabled = {{ view.directory_select_enabled }};
+                const tauriWindowChromeEnabled = {{ view.tauri_window_chrome }};
+
+                window.piclrInvokeTauriCommand = async (command, payload = {}) => {
+                    if (!tauriWindowChromeEnabled) return null;
+                    const tauriInvoke =
+                        window.__TAURI__?.core?.invoke ||
+                        window.__TAURI__?.invoke ||
+                        window.__TAURI_INTERNALS__?.invoke;
+                    if (typeof tauriInvoke !== "function") {
+                        return null;
+                    }
+                    return tauriInvoke(command, payload);
+                };
+
+                window.piclrWindowMinimize = async () => {
+                    try {
+                        await window.piclrInvokeTauriCommand?.("window_minimize");
+                    } catch (err) {
+                        console.warn("window minimize failed", err);
+                    }
+                };
+
+                window.piclrWindowToggleMaximize = async () => {
+                    try {
+                        await window.piclrInvokeTauriCommand?.("window_toggle_maximize");
+                    } catch (err) {
+                        console.warn("window maximize toggle failed", err);
+                    }
+                };
+
+                window.piclrWindowClose = async () => {
+                    try {
+                        await window.piclrInvokeTauriCommand?.("window_close");
+                    } catch (err) {
+                        console.warn("window close failed", err);
+                    }
+                };
+
+                window.piclrStartWindowDrag = async () => {
+                    try {
+                        await window.piclrInvokeTauriCommand?.("window_start_dragging");
+                    } catch (err) {
+                        console.warn("window drag failed", err);
+                    }
+                };
+
+                window.piclrWindowMenuOpen = false;
+                window.piclrSetWindowMenuOpen = (open) => {
+                    const menu = document.getElementById("window-menu");
+                    if (!(menu instanceof HTMLElement)) return;
+                    window.piclrWindowMenuOpen = !!open;
+                    menu.classList.toggle("open", !!open);
+                };
+                window.piclrToggleWindowMenu = () => {
+                    window.piclrSetWindowMenuOpen?.(!window.piclrWindowMenuOpen);
+                };
+                window.piclrCloseWindowMenu = () => {
+                    window.piclrSetWindowMenuOpen?.(false);
+                };
+                window.piclrHandleWindowMenuAction = async (action) => {
+                    window.piclrCloseWindowMenu?.();
+                    if (action === "about") {
+                        await fetch("/cmd/help", { method: "POST" });
+                        return;
+                    }
+                    if (action === "open-location") {
+                        await window.piclrSelectRootDirectory?.();
+                        return;
+                    }
+                    if (action === "exit") {
+                        await window.piclrWindowClose?.();
+                    }
+                };
+
+                document.addEventListener("mousedown", (evt) => {
+                    const menu = document.getElementById("window-menu");
+                    if (!(menu instanceof HTMLElement)) return;
+                    if (menu.contains(evt.target)) return;
+                    window.piclrCloseWindowMenu?.();
+                });
+
                 window.piclrInitModal = (modal) => {
                     if (!(modal instanceof HTMLElement)) return;
                     const closeButton = modal.querySelector(
@@ -44,19 +124,12 @@
                 };
 
                 window.piclrSelectRootDirectory = async () => {
-                    if (!directorySelectionEnabled) {
-                        return;
-                    }
-                    const tauriInvoke =
-                        window.__TAURI__?.core?.invoke ||
-                        window.__TAURI__?.invoke ||
-                        window.__TAURI_INTERNALS__?.invoke;
-                    if (typeof tauriInvoke !== "function") {
+                    if (!tauriWindowChromeEnabled) {
                         return;
                     }
                     let selected = null;
                     try {
-                        selected = await tauriInvoke("pick_directory");
+                        selected = await window.piclrInvokeTauriCommand?.("pick_directory");
                     } catch {
                         return;
                     }
@@ -156,8 +229,9 @@
                         return "next";
                     if (key === "Home") return "home";
                     if (key === "End") return "end";
-                    if (evt.key === "i" || evt.key === "I") return "toggle-sidebar";
-                    if ((evt.key === "o" || evt.key === "O") && evt.ctrlKey) return "toggle-sidebar";
+                    if ((evt.key === "o" || evt.key === "O") && evt.ctrlKey)
+                        return "open-location";
+                    if (evt.key === "f" || evt.key === "F") return "toggle-files";
                     if (
                         evt.key === "Enter" &&
                         evt.ctrlKey &&
@@ -193,6 +267,7 @@
     </head>
     <body
         id="app"
+        class="{% if view.tauri_window_chrome %}tauri-chrome{% endif %}"
         data-signals:sidebar-list-len="0"
         data-signals:sidebar-selected-index="-1"
         data-signals:sidebar-selected-kind="''"
@@ -232,7 +307,8 @@
                 else if (action === 'next') { evt.preventDefault(); @post('/cmd/next') }
                 else if (action === 'home') { evt.preventDefault(); @post('/cmd/home') }
                 else if (action === 'end') { evt.preventDefault(); @post('/cmd/end') }
-                else if (action === 'toggle-sidebar') { evt.preventDefault(); @post('/cmd/files/toggle') }
+                else if (action === 'open-location') { evt.preventDefault(); window.piclrSelectRootDirectory?.() }
+                else if (action === 'toggle-files') { evt.preventDefault(); @post('/cmd/files/toggle') }
                 else if (action === 'rename-directory') { evt.preventDefault(); window.piclrPromptRenameDirectory?.() }
                 else if (action === 'open-directory') { evt.preventDefault(); @post('/cmd/files/open') }
                 else if (action === 'delete-directory') { evt.preventDefault(); @post('/cmd/files/delete') }
@@ -245,13 +321,40 @@
         "
     >
         {% include "elements/modal/none.html" %}
-        {% include "elements/header.html" %}
-        <main-layout id="main-layout" data-class:sidebar-collapsed="!$sidebarExpanded" data-class:queue-collapsed="!$queueSidebarVisible">
-            {% include "elements/sidebar.html" %}
-            {% include "elements/image-viewer-empty.html" %}
-            {% include "elements/queue-sidebar.html" %}
-        </main-layout>
-        {% include "elements/footer.html" %}
+        {% if view.tauri_window_chrome %}
+        <window-chrome id="window-chrome">
+            <window-titlebar
+                data-on:mousedown="
+                    if (evt.button !== 0 || evt.target.closest('window-controls') || evt.target.closest('window-menu')) { return }
+                    if (evt.detail === 2) { window.piclrWindowToggleMaximize?.(); return }
+                    window.piclrStartWindowDrag?.()
+                "
+            >
+                <window-menu id="window-menu">
+                    <button type="button" class="window-menu-button" aria-label="Window menu" title="Window menu" data-on:mousedown__stop="0" data-on:click__stop="window.piclrToggleWindowMenu?.()"></button>
+                    <window-menu-list>
+                        <button type="button" data-on:click__stop="window.piclrHandleWindowMenuAction?.('about')">About</button>
+                        <button type="button" data-on:click__stop="window.piclrHandleWindowMenuAction?.('open-location')">Open Location</button>
+                        <button type="button" data-on:click__stop="window.piclrHandleWindowMenuAction?.('exit')">Exit</button>
+                    </window-menu-list>
+                </window-menu>
+                <window-controls>
+                    <button type="button" class="window-control minimize" aria-label="Minimize window" title="Minimize" data-on:mousedown__stop="0" data-on:click__stop="window.piclrWindowMinimize?.()"></button>
+                    <button type="button" class="window-control maximize" aria-label="Maximize or restore window" title="Maximize or Restore" data-on:mousedown__stop="0" data-on:click__stop="window.piclrWindowToggleMaximize?.()"></button>
+                    <button type="button" class="window-control close" aria-label="Close window" title="Close" data-on:mousedown__stop="0" data-on:click__stop="window.piclrWindowClose?.()"></button>
+                </window-controls>
+            </window-titlebar>
+        </window-chrome>
+        {% endif %}
+        <app-shell id="app-shell">
+            {% include "elements/header.html" %}
+            <main-layout id="main-layout" data-class:sidebar-collapsed="!$sidebarExpanded" data-class:queue-collapsed="!$queueSidebarVisible">
+                {% include "elements/sidebar.html" %}
+                {% include "elements/image-viewer-empty.html" %}
+                {% include "elements/queue-sidebar.html" %}
+            </main-layout>
+            {% include "elements/footer.html" %}
+        </app-shell>
         <input
             id="directory-rename-signal"
             type="text"

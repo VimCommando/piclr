@@ -11,9 +11,9 @@ use super::{
     broadcast_patch, broadcast_viewer_and_signals, patch_stack_card_if_visible,
 };
 
+pub mod files;
 pub mod image;
 pub mod queue;
-pub mod files;
 
 pub(crate) async fn left(State(state): State<WebState>) -> impl IntoResponse {
     let (selected_directory, target_parent) = {

@@ -159,10 +159,7 @@ pub fn router(ctx: AppContext) -> Router {
             post(cmd::files::delete_confirm),
         )
         .route("/cmd/files/open", post(cmd::files::open))
-        .route(
-            "/cmd/files/open-entry/{id}",
-            post(cmd::files::open_entry),
-        )
+        .route("/cmd/files/open-entry/{id}", post(cmd::files::open_entry))
         .route("/cmd/files/open-parent", post(cmd::files::open_parent))
         .route("/cmd/files/rename", patch(cmd::files::rename))
         .route("/cmd/files/root/select", post(cmd::files::root_select))
@@ -737,8 +734,7 @@ fn counter_signals_json(view: &AppView) -> String {
         "sidebarExpanded": view.sidebar_expanded,
         "queueSidebarVisible": view.queue_sidebar_visible,
         "queueSelected": view.queue_selected,
-        "selectedQueueItem": view.selected_queue_item,
-        "directorySelectEnabled": view.directory_select_enabled
+        "selectedQueueItem": view.selected_queue_item
     })
     .to_string()
 }
@@ -797,7 +793,7 @@ async fn build_view(ctx: &AppContext) -> AppView {
         cursor: state.cursor,
     };
     AppView {
-        directory_select_enabled: cfg!(feature = "tauri"),
+        tauri_window_chrome: cfg!(feature = "tauri"),
         active_modal,
         image_stack,
         sidebar_items,
@@ -903,7 +899,7 @@ fn build_sidebar_items(
 
 #[derive(Clone, Debug)]
 pub struct AppView {
-    pub directory_select_enabled: bool,
+    pub tauri_window_chrome: bool,
     pub active_modal: Option<ModalView>,
     pub image_stack: ImageStackProjection,
     pub sidebar_items: Vec<SidebarItem>,

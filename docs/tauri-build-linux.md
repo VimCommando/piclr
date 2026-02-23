@@ -6,7 +6,8 @@ This document captures the Linux prerequisites and build flow used to successful
 
 - Validated in an Ubuntu 24.04 container (Distrobox) on February 16, 2026.
 - Manual desktop validation completed for both X11 and Wayland sessions in this release cycle.
-- Manual desktop workflow validation completed for `Ctrl+O`, header/footer folder-open actions, and active-folder context switching.
+- Manual desktop workflow validation completed for `Ctrl+O`/titlebar `Open Location`, `F` sidebar toggle, and active-folder context switching.
+- Ongoing release checks are tracked in `docs/tauri-testing-checklist.md`.
 - Verified bundle outputs:
   - `.deb`
   - `.rpm`
@@ -89,6 +90,10 @@ Expected bundle outputs:
 sudo dpkg -i target/release/bundle/deb/piclr_0.1.0_amd64.deb
 piclr /path/to/images
 ```
+
+## Window Decorations (Linux)
+
+PICLR is currently configured with `decorations: false`, so it uses an in-app custom titlebar in Tauri mode (drag region plus minimize, maximize/restore, close controls).
 
 ## Known Notes
 

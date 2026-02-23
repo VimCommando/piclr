@@ -20,6 +20,7 @@
     --space-5: 24px;
     --motion-fast: 200ms;
     --motion-ease: cubic-bezier(0.18, 0.8, 0.2, 1);
+    --window-border: rgba(255, 255, 255, 0.14);
 }
 
 * {
@@ -37,6 +38,153 @@ body {
     margin: 0;
     min-height: 0;
     overflow: hidden;
+}
+
+app-shell {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+}
+
+body.tauri-chrome {
+    border: 1px solid var(--window-border);
+    border-radius: 8px;
+    padding: 0;
+}
+
+window-chrome {
+    display: flex;
+    flex: 0 0 auto;
+}
+
+window-titlebar {
+    -webkit-app-region: drag;
+    align-items: center;
+    background: var(--panel);
+    display: flex;
+    justify-content: space-between;
+    min-height: 28px;
+    padding: 0 8px;
+    width: 100%;
+}
+
+window-menu {
+    -webkit-app-region: no-drag;
+    display: inline-flex;
+    position: relative;
+}
+
+window-menu-button {
+    background: transparent;
+    border: none;
+    color: var(--text);
+    cursor: pointer;
+    height: 16px;
+    padding: 0 0 0 0.25em;
+    width: 16px;
+}
+
+window-menu-button::before {
+    background-color: currentColor;
+    content: "";
+    display: block;
+    height: 16px;
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 6 L8 10 L12 6' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    mask-position: center;
+    mask-repeat: no-repeat;
+    mask-size: contain;
+    width: 16px;
+}
+
+window-menu-list {
+    background: var(--panel-strong);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    display: none;
+    flex-direction: column;
+    left: 0;
+    min-width: 140px;
+    padding: 4px;
+    position: absolute;
+    top: calc(100% + 4px);
+    z-index: 1200;
+}
+
+window-menu.open window-menu-list {
+    display: flex;
+}
+
+window-menu-list > button {
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    color: var(--text);
+    cursor: pointer;
+    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    font-size: 12px;
+    padding: 6px 8px;
+    text-align: left;
+}
+
+window-menu-list > button:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+window-controls {
+    -webkit-app-region: no-drag;
+    align-items: center;
+    display: inline-flex;
+    gap: 10px;
+}
+
+window-controls > button.window-control {
+    -webkit-app-region: no-drag;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    cursor: pointer;
+    display: inline-flex;
+    height: 16px;
+    padding: 0;
+    width: 16px;
+    transition: opacity var(--motion-fast) var(--motion-ease);
+}
+
+window-controls > button.window-control::before {
+    background-color: currentColor;
+    content: "";
+    display: block;
+    height: 16px;
+    mask-position: center;
+    mask-repeat: no-repeat;
+    mask-size: contain;
+    width: 16px;
+}
+
+window-controls > button.window-control.minimize::before {
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='3' y='7.5' width='10' height='1.5' fill='black'/%3E%3C/svg%3E");
+}
+
+window-controls > button.window-control.maximize::before {
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='3.5' y='3.5' width='9' height='9' fill='none' stroke='black' stroke-width='1.5'/%3E%3C/svg%3E");
+}
+
+window-controls > button.window-control.close::before {
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 4 L12 12 M12 4 L4 12' stroke='black' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
+window-controls > button.window-control:hover {
+    color: var(--white);
+}
+
+window-controls > button.window-control.close:hover {
+    color: var(--soft-red);
+}
+
+window-controls > button.window-control:focus-visible {
+    outline: 2px solid var(--status-text);
+    outline-offset: 2px;
 }
 
 main-layout {

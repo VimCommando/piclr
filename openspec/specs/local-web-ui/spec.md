@@ -46,7 +46,7 @@ The system MUST keep frontend state minimal and derive UI from server state. For
 - **THEN** the UI renders directory/file rows and decorations from that server projection without client-side filesystem derivation
 
 ### Requirement: Askama templates with Datastar attributes
-The system MUST render UI with Askama templates using `data-*` attributes compatible with Datastar. Image-stack rendering MUST support initial stack hydration and single-entry render paths that produce equivalent markup for the same entry data. Sidebar row rendering MUST provide equivalent markup between initial hydration and patch updates and MUST replace the legacy image/file list modal as the navigation surface.
+The system MUST render UI with Askama templates using `data-*` attributes compatible with Datastar. Image-stack rendering MUST support initial stack hydration and single-entry render paths that produce equivalent markup for the same entry data. Sidebar row rendering MUST provide equivalent markup between initial hydration and patch updates and MUST replace the legacy image/file list modal as the navigation surface. In Tauri mode, the template layout MUST support a top-level desktop chrome wrapper while preserving equivalent render behavior for existing image stack and sidebar content.
 
 #### Scenario: Render initial page
 - **WHEN** the UI loads the main page
@@ -72,11 +72,15 @@ The system MUST serve Datastar as an embedded static asset from the local server
 - **THEN** datastar.js is served locally and initializes successfully
 
 ### Requirement: Optional Tauri shell
-The system MUST allow running as a standalone loopback web app and MUST allow an optional Tauri shell to load the same loopback UI.
+The system MUST allow running as a standalone loopback web app and MUST allow an optional Tauri shell to load the same loopback UI. When running in Tauri mode with undecorated windows, the UI MUST expose desktop window controls and drag affordances via in-app chrome while web mode remains unchanged.
 
 #### Scenario: Run without Tauri
 - **WHEN** Tauri is not enabled
 - **THEN** the user can open the loopback URL in a browser and use the app
+
+#### Scenario: Tauri mode exposes in-app window controls
+- **WHEN** Tauri is enabled and window decorations are disabled
+- **THEN** the UI presents in-app controls for minimize, maximize/restore, and close plus a drag-capable title region
 
 ### Requirement: Empty-state no-images message
 The system MUST present a clear empty-state message when no images are available in the currently selected directory.

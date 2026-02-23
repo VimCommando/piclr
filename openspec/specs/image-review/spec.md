@@ -71,18 +71,22 @@ The system MUST allow jumping to the next or previous undecided image using `Shi
 - **THEN** the selection moves to the nearest later image with an undecided state
 
 ### Requirement: Open new path
-The system MUST allow users to change the current working directory from the sidebar navigation surface while enforcing the root-directory boundary established at launch. `Ctrl+O` MUST toggle this sidebar surface instead of opening a native picker.
+The system MUST allow users to change the current working directory while enforcing the root-directory boundary established at launch. `F` MUST toggle the files sidebar surface, and `Ctrl+O` in desktop mode MUST open the root-location picker flow.
 
 #### Scenario: Toggle sidebar navigation
-- **WHEN** the user presses `Ctrl+O`
+- **WHEN** the user presses `F`
 - **THEN** the sidebar file navigation is shown or hidden
+
+#### Scenario: Open location from keyboard in desktop mode
+- **WHEN** the user presses `Ctrl+O` in desktop mode
+- **THEN** the root-location picker opens and selecting a directory replaces active root/current directory
 
 #### Scenario: Open a directory from sidebar
 - **WHEN** the user selects a directory row and chooses `open`
 - **THEN** the current run is updated to the selected child directory and the image list is rebuilt from supported files in that directory
 
-#### Scenario: Tauri root reselection from sidebar header
-- **WHEN** the app runs in Tauri mode and the user clicks the sidebar root control and picks a new directory
+#### Scenario: Tauri root reselection from titlebar menu
+- **WHEN** the app runs in Tauri mode and the user uses titlebar menu `Open Location` and picks a new directory
 - **THEN** the active root/current directory is replaced with the selected directory and the sidebar/image projections are rebuilt
 
 ### Requirement: Apply decision to current image
@@ -100,12 +104,16 @@ The system MUST apply left/right actions only when the current selection is an i
 - **WHEN** the selected row is a directory and the user presses a directional action key
 - **THEN** the system performs directory navigation behavior and does not apply an image decision
 
-### Requirement: Keyboard shortcuts for queue, list, help, and close
-The system MUST provide keyboard shortcuts for opening queue/help views, toggling sidebar file navigation, and closing the top modal or menu surface.
+### Requirement: Keyboard shortcuts for queue, files, help, and close
+The system MUST provide keyboard shortcuts for opening queue/help views, toggling the files sidebar, opening desktop root location, and closing the top modal or menu surface.
 
-#### Scenario: Open queue, sidebar navigation, and help
-- **WHEN** the user presses `q`, `Ctrl+O`, or `?`
-- **THEN** the system opens the queue view, toggles sidebar file navigation, or opens help respectively
+#### Scenario: Open queue, files sidebar, and help
+- **WHEN** the user presses `q`, `F`, or `?`
+- **THEN** the system opens the queue view, toggles files sidebar visibility, or opens help respectively
+
+#### Scenario: Open location from keyboard shortcut
+- **WHEN** the user presses `Ctrl+O` in desktop mode
+- **THEN** the system opens the root-location picker flow
 
 #### Scenario: Close top modal or menu surface
 - **WHEN** the user presses `Escape`

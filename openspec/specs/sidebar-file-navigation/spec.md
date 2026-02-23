@@ -60,12 +60,19 @@ The `open` directory action MUST set the selected directory as the current worki
 - **WHEN** the user selects `open` from the selected directory row actions (or presses Enter on the selected directory row)
 - **THEN** the server updates current working directory and emits refreshed sidebar and image-viewer projections
 
-### Requirement: Sidebar replaces native Ctrl+O picker
-The system MUST bind `Ctrl+O` to sidebar expand/collapse behavior and MUST NOT open a native file picker from this interaction path.
+### Requirement: Files sidebar toggle shortcut
+The system MUST bind `F` to sidebar expand/collapse behavior.
 
-#### Scenario: Ctrl+O toggles sidebar
-- **WHEN** the user presses `Ctrl+O`
-- **THEN** the sidebar visibility toggles and no native file picker is shown
+#### Scenario: F toggles sidebar
+- **WHEN** the user presses `F`
+- **THEN** the sidebar visibility toggles
+
+### Requirement: Ctrl+O opens root-location picker in desktop mode
+The system MUST bind `Ctrl+O` to root-location picker behavior in desktop mode and MUST NOT reuse that shortcut for sidebar toggling.
+
+#### Scenario: Ctrl+O opens location picker
+- **WHEN** the user presses `Ctrl+O` in desktop mode
+- **THEN** the native location picker opens and selecting a directory updates active root/current directory
 
 ### Requirement: Remove image/file list modal
 The system MUST remove the legacy image/file list modal and perform file/directory navigation through the sidebar.
