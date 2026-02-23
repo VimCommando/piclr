@@ -1492,13 +1492,8 @@ async fn build_view(ctx: &AppContext) -> AppView {
         .iter()
         .filter_map(|queued_id| state.images.iter().find(|image| image.id == *queued_id))
         .filter_map(|image| {
-            let queued = image.queued_action.as_ref()?;
-            Some(queue_item_from_action(
-                image,
-                queued,
-                decision_side(image),
-                state.root_dir.as_ref(),
-            ))
+            image.queued_action.as_ref()?;
+            Some(queue_item_from_action(image, decision_side(image), state.root_dir.as_ref()))
         })
         .collect();
     for item in &mut queue_items {
@@ -1530,13 +1525,8 @@ async fn build_view(ctx: &AppContext) -> AppView {
                         .find(|image| Some(image.id) == entry.image_id)
                         .expect("nav file entry must reference image");
                     let queue_item = match &image.decision {
-                        crate::domain::DecisionState::Decided { side, action } => {
-                            queue_item_from_action(
-                                image,
-                                action,
-                                Some(*side),
-                                state.root_dir.as_ref(),
-                            )
+                        crate::domain::DecisionState::Decided { side, .. } => {
+                            queue_item_from_action(image, Some(*side), state.root_dir.as_ref())
                         }
                         crate::domain::DecisionState::Undecided => {
                             queue_item_none(image, state.root_dir.as_ref())
@@ -1687,8 +1677,8 @@ fn image_alignment_for(image: &ImageEntry) -> String {
 
 fn queue_item_for_image(image: &ImageEntry, root_dir: Option<&PathBuf>) -> QueueItem {
     match &image.decision {
-        crate::domain::DecisionState::Decided { side, action } => {
-            queue_item_from_action(image, action, Some(*side), root_dir)
+        crate::domain::DecisionState::Decided { side, .. } => {
+            queue_item_from_action(image, Some(*side), root_dir)
         }
         crate::domain::DecisionState::Undecided => queue_item_none(image, root_dir),
     }
@@ -1752,7 +1742,6 @@ fn file_label_for_image(image: &ImageEntry, root_dir: Option<&PathBuf>) -> Strin
 
 fn queue_item_from_action(
     image: &ImageEntry,
-    _action: &ActionConfig,
     side: Option<DecisionSide>,
     root_dir: Option<&PathBuf>,
 ) -> QueueItem {
