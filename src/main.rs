@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 
 use clap::Parser;
@@ -15,6 +15,8 @@ struct Cli {
     path: Option<PathBuf>,
     #[arg(long)]
     port: Option<u16>,
+    #[arg(long, default_value_t = IpAddr::from([127, 0, 0, 1]))]
+    bind: IpAddr,
 }
 
 #[tokio::main]
@@ -25,7 +27,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let cli = Cli::parse();
-    let Cli { path, port } = cli;
+    let Cli { path, port, bind } = cli;
 
     let launch_root = if let Some(path) = path {
         path
@@ -64,7 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let app = router(ctx);
     let bind_port = port.unwrap_or(0);
-    let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{bind_port}")).await?;
+    let listener = tokio::net::TcpListener::bind(SocketAddr::new(bind, bind_port)).await?;
     let addr: SocketAddr = listener.local_addr()?;
     let url = format!("http://{}", addr);
     tracing::info!("Listening on {}", url);
