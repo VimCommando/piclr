@@ -1,15 +1,9 @@
 <header id="header">
     <section aria-label="Directory">
-        <button
-            id="directory-select"
-            type="button"
-            title="Select directory"
-            data-on:click="window.piclrOpenDirectoryPicker?.()"
-            data-attr="{ disabled: !$directorySelectEnabled, 'aria-disabled': !$directorySelectEnabled }"
-        >
+        <button id="directory-select" type="button" title="Toggle sidebar" data-on:click="@post('/cmd/sidebar/toggle')">
             <glyph>📁</glyph>
         </button>
-        <button data-on:click="@post('/cmd/files/show')">
+        <button data-on:click="@post('/cmd/sidebar/toggle')">
             <span data-text="$counterImageIndex"></span> /
             <span data-text="$counterImageTotal"></span>
         </button>

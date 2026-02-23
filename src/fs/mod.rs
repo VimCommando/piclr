@@ -61,6 +61,7 @@ pub async fn scan_images(root: &Path) -> Vec<ImageEntry> {
 
         let created = meta.created().ok().or_else(|| meta.modified().ok());
         let modified = meta.modified().ok();
+        let size = meta.len();
         let orientation = read_orientation(&path).await;
 
         entries.push(ImageEntry {
@@ -73,12 +74,40 @@ pub async fn scan_images(root: &Path) -> Vec<ImageEntry> {
             meta: ImageMeta {
                 created,
                 modified,
+                size,
                 orientation,
             },
         });
         id_counter += 1;
     }
 
+    entries
+}
+
+pub async fn scan_directories(root: &Path, launch_root: &Path) -> Vec<PathBuf> {
+    let mut entries = Vec::new();
+
+    for entry in WalkDir::new(root).max_depth(1).into_iter() {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(err) => {
+                warn!(%err, "Failed to read directory entry");
+                continue;
+            }
+        };
+        if !entry.file_type().is_dir() {
+            continue;
+        }
+        if entry.path() == root {
+            continue;
+        }
+        let Ok(rel) = entry.path().strip_prefix(launch_root) else {
+            continue;
+        };
+        entries.push(rel.to_path_buf());
+    }
+
+    entries.sort();
     entries
 }
 
@@ -266,6 +295,10 @@ fn supported_extensions() -> HashSet<&'static str> {
     ["jpg", "jpeg", "png", "gif", "webp", "heic", "svg"]
         .into_iter()
         .collect()
+}
+
+pub fn is_supported_image_path(path: &Path) -> bool {
+    is_supported(path, &supported_extensions())
 }
 
 fn is_supported(path: &Path, extensions: &HashSet<&'static str>) -> bool {

@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::time::SystemTime;
@@ -22,6 +23,7 @@ pub enum AppMode {
 pub struct ImageMeta {
     pub created: Option<SystemTime>,
     pub modified: Option<SystemTime>,
+    pub size: u64,
     pub orientation: Option<u16>,
 }
 
@@ -36,9 +38,27 @@ pub struct ImageEntry {
     pub meta: ImageMeta,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NavEntryKind {
+    Directory,
+    File,
+}
+
+#[derive(Clone, Debug)]
+pub struct NavEntry {
+    pub id: u64,
+    pub rel_path: PathBuf,
+    pub label: String,
+    pub kind: NavEntryKind,
+    pub image_id: Option<u64>,
+    pub is_parent_link: bool,
+}
+
 #[derive(Clone, Debug)]
 pub struct AppStateInner {
     pub images: Vec<ImageEntry>,
+    pub nav_entries: Vec<NavEntry>,
+    pub current_dir: Option<PathBuf>,
     pub order: Vec<usize>,
     pub cursor: usize,
     pub queued_ids: VecDeque<u64>,
@@ -50,6 +70,11 @@ pub struct AppStateInner {
     pub preload: PreloadState,
     pub rename_counter: u64,
     pub root_dir: Option<PathBuf>,
+    pub pending_directory_path: Option<PathBuf>,
+    pub pending_delete_directory_path: Option<PathBuf>,
+    pub selected_entry_id: Option<u64>,
+    pub sidebar_expanded: bool,
+    pub directory_actions_entry_id: Option<u64>,
     pub active_modal: Option<ModalView>,
     pub projection: ReadModelProjection,
     pub last_apply_result: Option<ApplyResultSummary>,
@@ -77,8 +102,9 @@ pub struct ReadModelProjection {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModalView {
     DeleteConfirm,
+    QueueNotEmptyConfirm,
+    DirectoryDeleteConfirm,
     Queue,
-    Files,
     Help,
     ApplyResult,
 }
@@ -93,6 +119,8 @@ impl AppStateInner {
     pub fn new(queue_mode: bool, action_mapping: ActionMapping, sort_mode: SortMode) -> Self {
         Self {
             images: Vec::new(),
+            nav_entries: Vec::new(),
+            current_dir: None,
             order: Vec::new(),
             cursor: 0,
             queued_ids: VecDeque::new(),
@@ -104,6 +132,11 @@ impl AppStateInner {
             preload: PreloadState::default(),
             rename_counter: 1,
             root_dir: None,
+            pending_directory_path: None,
+            pending_delete_directory_path: None,
+            selected_entry_id: None,
+            sidebar_expanded: false,
+            directory_actions_entry_id: None,
             active_modal: None,
             projection: ReadModelProjection::default(),
             last_apply_result: None,
@@ -112,15 +145,34 @@ impl AppStateInner {
         }
     }
 
-    pub fn set_images(&mut self, images: Vec<ImageEntry>, root_dir: Option<PathBuf>) {
+    pub fn set_directory_snapshot(
+        &mut self,
+        images: Vec<ImageEntry>,
+        directories: Vec<PathBuf>,
+        root_dir: Option<PathBuf>,
+        current_dir: Option<PathBuf>,
+    ) {
+        if root_dir.is_some() {
+            self.root_dir = root_dir.clone();
+        }
+        self.current_dir = current_dir;
         self.images = images;
         self.scan_version = self.scan_version.saturating_add(1);
         self.order = sort_indices(&self.images, self.sort_mode);
         self.cursor = 0;
-        self.root_dir = root_dir;
+        self.undo_stack.clear();
+        self.rename_counter = 1;
         self.rebuild_queue_from_order();
+        self.rebuild_nav_entries(directories);
         self.rebuild_projection();
         self.update_preload();
+        self.sync_selected_to_current_image();
+        self.directory_actions_entry_id = None;
+    }
+
+    pub fn set_images(&mut self, images: Vec<ImageEntry>, root_dir: Option<PathBuf>) {
+        let current_dir = root_dir.clone();
+        self.set_directory_snapshot(images, Vec::new(), root_dir, current_dir);
     }
 
     pub fn current_index(&self) -> Option<usize> {
@@ -148,6 +200,7 @@ impl AppStateInner {
         self.rebuild_queue_from_order();
         self.update_stack_projection(5);
         self.update_preload();
+        self.sync_selected_to_current_image();
     }
 
     pub fn next(&mut self) {
@@ -156,6 +209,8 @@ impl AppStateInner {
             self.record_nav(NavDirection::Down);
             self.update_stack_projection(5);
             self.update_preload();
+            self.sync_selected_to_current_image();
+            self.directory_actions_entry_id = None;
         }
     }
 
@@ -165,6 +220,8 @@ impl AppStateInner {
             self.record_nav(NavDirection::Up);
             self.update_stack_projection(5);
             self.update_preload();
+            self.sync_selected_to_current_image();
+            self.directory_actions_entry_id = None;
         }
     }
 
@@ -184,6 +241,8 @@ impl AppStateInner {
             self.record_nav(NavDirection::Down);
             self.update_stack_projection(5);
             self.update_preload();
+            self.sync_selected_to_current_image();
+            self.directory_actions_entry_id = None;
         }
     }
 
@@ -202,6 +261,8 @@ impl AppStateInner {
             self.record_nav(NavDirection::Up);
             self.update_stack_projection(5);
             self.update_preload();
+            self.sync_selected_to_current_image();
+            self.directory_actions_entry_id = None;
         }
     }
 
@@ -224,9 +285,148 @@ impl AppStateInner {
             }
             self.update_stack_projection(5);
             self.update_preload();
+            self.selected_entry_id = Some(image_id);
+            self.directory_actions_entry_id = None;
             return true;
         }
         false
+    }
+
+    pub fn select_entry_by_id(&mut self, entry_id: u64) -> bool {
+        if let Some(entry) = self.nav_entries.iter().find(|entry| entry.id == entry_id) {
+            self.selected_entry_id = Some(entry_id);
+            self.directory_actions_entry_id = None;
+            if let Some(image_id) = entry.image_id {
+                return self.select_image_by_id(image_id);
+            }
+            return true;
+        }
+        false
+    }
+
+    pub fn select_first_entry(&mut self) -> bool {
+        let Some(entry) = self.nav_entries.first() else {
+            return false;
+        };
+        self.select_entry_by_id(entry.id)
+    }
+
+    pub fn select_last_entry(&mut self) -> bool {
+        let Some(entry) = self.nav_entries.last() else {
+            return false;
+        };
+        self.select_entry_by_id(entry.id)
+    }
+
+    pub fn select_first_image(&mut self) -> bool {
+        let Some(idx) = self.order.first().copied() else {
+            return false;
+        };
+        let Some(image) = self.images.get(idx) else {
+            return false;
+        };
+        self.select_image_by_id(image.id)
+    }
+
+    pub fn select_last_image(&mut self) -> bool {
+        let Some(idx) = self.order.last().copied() else {
+            return false;
+        };
+        let Some(image) = self.images.get(idx) else {
+            return false;
+        };
+        self.select_image_by_id(image.id)
+    }
+
+    pub fn select_next_entry(&mut self) -> bool {
+        if self.nav_entries.is_empty() {
+            return false;
+        }
+        let current_pos = self
+            .selected_entry_id
+            .and_then(|id| self.nav_entries.iter().position(|entry| entry.id == id));
+        let next_pos = match current_pos {
+            Some(pos) if pos + 1 < self.nav_entries.len() => pos + 1,
+            Some(_) => return false,
+            None => 0,
+        };
+        let entry_id = self.nav_entries[next_pos].id;
+        self.select_entry_by_id(entry_id)
+    }
+
+    pub fn select_prev_entry(&mut self) -> bool {
+        if self.nav_entries.is_empty() {
+            return false;
+        }
+        let current_pos = self
+            .selected_entry_id
+            .and_then(|id| self.nav_entries.iter().position(|entry| entry.id == id));
+        let prev_pos = match current_pos {
+            Some(pos) if pos > 0 => pos - 1,
+            Some(_) => return false,
+            None => 0,
+        };
+        let entry_id = self.nav_entries[prev_pos].id;
+        self.select_entry_by_id(entry_id)
+    }
+
+    pub fn selected_entry(&self) -> Option<&NavEntry> {
+        let id = self.selected_entry_id?;
+        self.nav_entries.iter().find(|entry| entry.id == id)
+    }
+
+    pub fn selected_entry_is_directory(&self) -> bool {
+        self.selected_entry()
+            .map(|entry| entry.kind == NavEntryKind::Directory)
+            .unwrap_or(false)
+    }
+
+    pub fn selected_directory_path(&self) -> Option<PathBuf> {
+        let root = self.root_dir.as_ref()?;
+        let entry = self.selected_entry()?;
+        if entry.kind != NavEntryKind::Directory {
+            return None;
+        }
+        Some(root.join(&entry.rel_path))
+    }
+
+    pub fn navigate_to_selected_directory(&self) -> Option<PathBuf> {
+        self.selected_directory_path()
+    }
+
+    pub fn navigate_to_parent_directory(&self) -> Option<PathBuf> {
+        let root = self.root_dir.as_ref()?;
+        let current = self.current_dir.as_ref()?;
+        if current == root {
+            return None;
+        }
+        current
+            .parent()
+            .filter(|parent| parent.starts_with(root))
+            .map(|path| path.to_path_buf())
+    }
+
+    pub fn toggle_sidebar(&mut self) {
+        self.sidebar_expanded = !self.sidebar_expanded;
+    }
+
+    pub fn close_directory_actions(&mut self) {
+        self.directory_actions_entry_id = None;
+    }
+
+    pub fn open_directory_actions_for_selected(&mut self) -> bool {
+        if !self.selected_entry_is_directory() {
+            return false;
+        }
+        if self
+            .selected_entry()
+            .map(|entry| entry.is_parent_link)
+            .unwrap_or(false)
+        {
+            return false;
+        }
+        self.directory_actions_entry_id = self.selected_entry_id;
+        true
     }
 
     fn record_nav(&mut self, direction: NavDirection) {
@@ -302,6 +502,7 @@ impl AppStateInner {
         self.rename_counter = 1;
         self.rebuild_projection();
         self.update_preload();
+        self.directory_actions_entry_id = None;
     }
 
     pub fn record_undo(&mut self, entry: UndoEntry) {
@@ -318,7 +519,11 @@ impl AppStateInner {
                 image.decision = undo.previous_decision.clone();
                 image.queued_action = undo.previous_queue.clone();
             }
-            self.cursor = undo.previous_cursor;
+            if !self.select_image_by_id(undo.image_id) {
+                let max_cursor = self.order.len().saturating_sub(1);
+                self.cursor = undo.previous_cursor.min(max_cursor);
+                self.sync_selected_to_current_image();
+            }
             self.rebuild_queue_from_order();
             self.rebuild_projection();
             self.update_preload();
@@ -385,6 +590,68 @@ impl AppStateInner {
         }
     }
 
+    fn rebuild_nav_entries(&mut self, mut directories: Vec<PathBuf>) {
+        directories.sort();
+        let mut entries = Vec::with_capacity(directories.len() + self.images.len());
+        if let (Some(root), Some(current)) = (self.root_dir.as_ref(), self.current_dir.as_ref()) {
+            if current != root {
+                if let Some(parent) = current.parent() {
+                    if let Ok(rel_path) = parent.strip_prefix(root) {
+                        entries.push(NavEntry {
+                            id: directory_entry_id(&rel_path.to_path_buf()),
+                            rel_path: rel_path.to_path_buf(),
+                            label: "..".to_string(),
+                            kind: NavEntryKind::Directory,
+                            image_id: None,
+                            is_parent_link: true,
+                        });
+                    }
+                }
+            }
+        }
+        for rel_path in directories {
+            let label = rel_path
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .unwrap_or_else(|| rel_path.to_string_lossy().to_string());
+            entries.push(NavEntry {
+                id: directory_entry_id(&rel_path),
+                rel_path,
+                label,
+                kind: NavEntryKind::Directory,
+                image_id: None,
+                is_parent_link: false,
+            });
+        }
+        for idx in &self.order {
+            if let Some(image) = self.images.get(*idx) {
+                let rel_path = self
+                    .root_dir
+                    .as_ref()
+                    .and_then(|root| image.path.strip_prefix(root).ok())
+                    .map(|path| path.to_path_buf())
+                    .unwrap_or_else(|| image.path.clone());
+                let label = rel_path
+                    .file_name()
+                    .map(|name| name.to_string_lossy().to_string())
+                    .unwrap_or_else(|| rel_path.to_string_lossy().to_string());
+                entries.push(NavEntry {
+                    id: image.id,
+                    rel_path,
+                    label,
+                    kind: NavEntryKind::File,
+                    image_id: Some(image.id),
+                    is_parent_link: false,
+                });
+            }
+        }
+        self.nav_entries = entries;
+    }
+
+    fn sync_selected_to_current_image(&mut self) {
+        self.selected_entry_id = self.current().map(|entry| entry.id);
+    }
+
     fn update_stack_projection(&mut self, radius: usize) {
         if self.order.is_empty() {
             self.projection.stack_start = 0;
@@ -418,6 +685,12 @@ impl AppStateInner {
         self.rebuild_projection_counters();
         self.update_stack_projection(5);
     }
+}
+
+fn directory_entry_id(rel_path: &PathBuf) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    rel_path.hash(&mut hasher);
+    (hasher.finish() & !(1_u64 << 63)) | (1_u64 << 63)
 }
 
 #[derive(Clone, Debug)]

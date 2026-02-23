@@ -20,8 +20,7 @@
                 data-image-id="{{ item.image_id }}"
                 data-on:click="@post('/cmd/select/{{ item.image_id }}')"
             >
-                <entry-arrow>{{ item.arrow }}</entry-arrow>
-                <entry-action>{{ item.action_label }}</entry-action>
+                <entry-status><status-glyph class="{{ item.status_kind }}"></status-glyph></entry-status>
                 <entry-file>{{ item.file_label }}</entry-file>
             </entry-line>
             {% endfor %}

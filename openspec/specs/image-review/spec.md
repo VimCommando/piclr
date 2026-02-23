@@ -32,11 +32,15 @@ The system MUST support ordering the review list by filesystem order and by conf
 - **THEN** the review list is reordered accordingly and the current selection remains valid
 
 ### Requirement: Single-image presentation
-The system MUST present exactly one image at a time to the user for review.
+The system MUST present exactly one supported image file at a time to the user for review. Directory entries MUST NOT be treated as reviewable images.
 
 #### Scenario: Viewing the current image
 - **WHEN** the user is in the viewing state
-- **THEN** the UI displays the currently selected image and its position in the list
+- **THEN** the UI displays the currently selected image file and its position in the image list
+
+#### Scenario: Directory entries are excluded from review presentation
+- **WHEN** directory entries exist in the current working directory
+- **THEN** those directories are not included as selectable items in the image-viewer list
 
 ### Requirement: Preload adjacent images
 The system MUST preload the next image in the current review order to minimize navigation latency.
@@ -67,37 +71,41 @@ The system MUST allow jumping to the next or previous undecided image using `Shi
 - **THEN** the selection moves to the nearest later image with an undecided state
 
 ### Requirement: Open new path
-The system MUST allow the user to open a new directory from the UI via Ctrl+O.
+The system MUST allow users to change the current working directory from the sidebar navigation surface while enforcing the root-directory boundary established at launch. `Ctrl+O` MUST toggle this sidebar surface instead of opening a native picker.
 
-#### Scenario: Open a new directory
-- **WHEN** the user presses Ctrl+O and selects a new directory
-- **THEN** the current run is replaced with a scan of the selected directory
+#### Scenario: Toggle sidebar navigation
+- **WHEN** the user presses `Ctrl+O`
+- **THEN** the sidebar file navigation is shown or hidden
+
+#### Scenario: Open a directory from sidebar
+- **WHEN** the user selects a directory row and chooses `open`
+- **THEN** the current run is updated to the selected child directory and the image list is rebuilt from supported files in that directory
 
 ### Requirement: Apply decision to current image
-The system MUST apply the left or right action to the currently selected image when the user presses the corresponding directional key bindings or clicks the corresponding half of the stack view. Rapid consecutive key commands MUST preserve user intent by dispatching each command without client-side auto-cancellation.
+The system MUST apply left/right actions only when the current selection is an image file.
 
-#### Scenario: Left decision applied
-- **WHEN** the user presses `ArrowLeft` or `h`, or clicks the left half of the stack view
+#### Scenario: Left decision applied to selected image file
+- **WHEN** the selected row is an image file and the user presses `ArrowLeft` or `h`, or clicks the left half of the stack view
 - **THEN** the configured left action is applied to the current image and the UI advances according to navigation rules
 
-#### Scenario: Right decision applied
-- **WHEN** the user presses `ArrowRight` or `l`, or clicks the right half of the stack view
+#### Scenario: Right decision applied to selected image file
+- **WHEN** the selected row is an image file and the user presses `ArrowRight` or `l`, or clicks the right half of the stack view
 - **THEN** the configured right action is applied to the current image and the UI advances according to navigation rules
 
-#### Scenario: Rapid keyboard decisions preserve command dispatch
-- **WHEN** the user presses multiple decision/navigation keys rapidly
-- **THEN** each corresponding command request is dispatched and not auto-canceled by frontend request cancellation policy
+#### Scenario: Directional action on selected directory does not apply image decision
+- **WHEN** the selected row is a directory and the user presses a directional action key
+- **THEN** the system performs directory navigation behavior and does not apply an image decision
 
 ### Requirement: Keyboard shortcuts for queue, list, help, and close
-The system MUST provide keyboard shortcuts for opening queue/list/help views and closing the top modal.
+The system MUST provide keyboard shortcuts for opening queue/help views, toggling sidebar file navigation, and closing the top modal or menu surface.
 
-#### Scenario: Open queue, image list, and help
-- **WHEN** the user presses `q`, `i`, or `?`
-- **THEN** the system opens the queue, image list, or help modal respectively
+#### Scenario: Open queue, sidebar navigation, and help
+- **WHEN** the user presses `q`, `Ctrl+O`, or `?`
+- **THEN** the system opens the queue view, toggles sidebar file navigation, or opens help respectively
 
-#### Scenario: Close top modal
+#### Scenario: Close top modal or menu surface
 - **WHEN** the user presses `Escape`
-- **THEN** the system closes the top modal in the modal stack
+- **THEN** the system closes the top modal/menu surface in the active stack
 
 ### Requirement: Keyboard shortcut for undo
 The system MUST provide a keyboard shortcut to undo the most recent command.

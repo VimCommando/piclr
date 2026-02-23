@@ -1,0 +1,76 @@
+<sidebar-panel id="sidebar" class="{% if !view.sidebar_expanded %}collapsed{% endif %}">
+    <sidebar-header>
+        <button
+            {% if view.directory_select_enabled %}
+            data-on:click="window.piclrSelectRootDirectory?.()"
+            {% else %}
+            disabled
+            {% endif %}
+        >📂 {{ view.current_path_label }}</button>
+        <sidebar-tools data-signals:sort-menu-open="false">
+            <button
+                class="icon-button"
+                title="Sort"
+                data-on:click="$sortMenuOpen = !$sortMenuOpen"
+            >
+                <sort-glyph></sort-glyph>
+            </button>
+            <sort-menu data-show="$sortMenuOpen">
+                <button class="{% if view.selected_sort_mode == "name-asc" %}selected{% endif %}" data-on:click="@post('/cmd/sidebar/sort/name-asc'); $sortMenuOpen = false"><sort-option-icon class="asc"></sort-option-icon>Name</button>
+                <button class="{% if view.selected_sort_mode == "name-desc" %}selected{% endif %}" data-on:click="@post('/cmd/sidebar/sort/name-desc'); $sortMenuOpen = false"><sort-option-icon class="desc"></sort-option-icon>Name</button>
+                <button class="{% if view.selected_sort_mode == "modified-asc" %}selected{% endif %}" data-on:click="@post('/cmd/sidebar/sort/modified-asc'); $sortMenuOpen = false"><sort-option-icon class="asc"></sort-option-icon>Modified</button>
+                <button class="{% if view.selected_sort_mode == "modified-desc" %}selected{% endif %}" data-on:click="@post('/cmd/sidebar/sort/modified-desc'); $sortMenuOpen = false"><sort-option-icon class="desc"></sort-option-icon>Modified</button>
+                <button class="{% if view.selected_sort_mode == "size-asc" %}selected{% endif %}" data-on:click="@post('/cmd/sidebar/sort/size-asc'); $sortMenuOpen = false"><sort-option-icon class="asc"></sort-option-icon>Size</button>
+                <button class="{% if view.selected_sort_mode == "size-desc" %}selected{% endif %}" data-on:click="@post('/cmd/sidebar/sort/size-desc'); $sortMenuOpen = false"><sort-option-icon class="desc"></sort-option-icon>Size</button>
+            </sort-menu>
+        </sidebar-tools>
+    </sidebar-header>
+    <entry-list
+        id="sidebar-list"
+        data-init="window.piclrInitSidebarList?.(document.getElementById('sidebar-list'))"
+        data-effect="
+            const rows = [...el.querySelectorAll('entry-line[data-entry-kind]')];
+            $sidebarListLen = rows.length;
+            const current = el.querySelector('entry-line.log-entry-current');
+            $sidebarSelectedIndex = current ? rows.indexOf(current) : -1;
+            $sidebarSelectedKind = current ? (current.getAttribute('data-entry-kind') || '') : '';
+            $sidebarSelectedParent = current ? (current.getAttribute('data-entry-parent') === 'true') : false;
+            window.piclrInitSidebarList?.(el);
+            $selectedSidebarEntry
+        "
+    >
+        {% if view.sidebar_items.is_empty() %}
+        <entry-line class="tone-neutral sidebar-empty">
+            <entry-status><status-glyph class="none"></status-glyph></entry-status>
+            <entry-file>No supported files or directories.</entry-file>
+        </entry-line>
+        {% else %}
+        {% for item in view.sidebar_items %}
+        <entry-line
+            class="tone-{{ item.action_tone }}{% if item.selected %} log-entry-current{% endif %}{% if item.entry_kind == "directory" %} entry-directory{% endif %}"
+            data-entry-kind="{{ item.entry_kind }}"
+            data-entry-parent="{% if item.is_parent_link %}true{% else %}false{% endif %}"
+            data-entry-path="{{ item.path_hint }}"
+            data-on:click="@post('/cmd/select/{{ item.entry_id }}')"
+            data-on:dblclick="@post('/cmd/sidebar/open-entry/{{ item.entry_id }}')"
+        >
+            <entry-status>
+                {% if item.entry_kind == "directory" %}
+                📁
+                {% else %}
+                <status-glyph class="{{ item.status_kind }}"></status-glyph>
+                {% endif %}
+            </entry-status>
+            <entry-file>{{ item.file_label }}</entry-file>
+            {% if item.entry_kind == "directory" && item.selected && !item.is_parent_link %}
+            <row-actions>
+                <button title="Open" data-on:click__stop="@post('/cmd/sidebar/open')">➡️</button>
+                <button title="Rename" data-on:click__stop="window.piclrPromptRenameDirectory?.()">✏️</button>
+                <button title="Delete" data-on:click__stop="@post('/cmd/sidebar/delete')">🗑️</button>
+            </row-actions>
+            {% endif %}
+        </entry-line>
+        {% endfor %}
+        {% endif %}
+    </entry-list>
+</sidebar-panel>

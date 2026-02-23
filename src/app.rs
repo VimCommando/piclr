@@ -29,7 +29,7 @@ impl Default for AppConfig {
                 },
             },
             sort_mode: SortMode {
-                key: SortKey::Filesystem,
+                key: SortKey::LastModified,
                 direction: SortDirection::Asc,
             },
         }

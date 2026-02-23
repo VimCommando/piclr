@@ -1,9 +1,13 @@
 <footer id="footerbar">
     <section aria-label="App name">
         <app-title>
-            <left>◀</left>
+            <title-glyph
+                ><status-glyph class="left"></status-glyph
+            ></title-glyph>
             piclr
-            <right>▶</right>
+            <title-glyph
+                ><status-glyph class="right"></status-glyph
+            ></title-glyph>
         </app-title>
     </section>
     <section aria-label="Commands">
@@ -14,12 +18,7 @@
             <button data-on:click="@post('/cmd/right')">➡️ Right</button>
             <button data-on:click="@post('/cmd/undo')">↩️ Undo</button>
             <button data-on:click="@post('/cmd/apply')">▶️ Apply</button>
-            <button
-                data-on:click="window.piclrOpenDirectoryPicker?.()"
-                data-attr="{ disabled: !$directorySelectEnabled, 'aria-disabled': !$directorySelectEnabled }"
-            >
-                ⏏️ Open
-            </button>
+            <button data-on:click="@post('/cmd/help')">ℹ️ Help</button>
         </command-list>
     </section>
     <section aria-label="Settings">

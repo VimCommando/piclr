@@ -51,34 +51,37 @@ Actual:
 
 ## 4. Functional Desktop Validation
 
-### 4.1 Folder Picker (`Ctrl+O`)
+### 4.1 Sidebar Toggle (`Ctrl+O`)
 
 Steps:
 1. Launch desktop mode.
 2. Press `Ctrl+O`.
-3. Select a different image directory.
+3. Press `Ctrl+O` again.
 
 Expected:
-- Native folder dialog opens.
-- Selection closes dialog and updates active directory in UI.
+- Sidebar visibility toggles open/closed.
+- No native folder dialog opens from `Ctrl+O`.
+
+Actual:
+- Toggle behavior:
+- Dialog behavior:
+
+### 4.2 Root Switch via Sidebar Header Button (Tauri Only)
+
+Steps:
+1. Open sidebar.
+2. Click the top folder/path button in the sidebar header.
+3. In the native directory picker, select a different root directory.
+
+Expected:
+- Native directory picker opens.
+- Selecting a directory updates active root/current directory.
+- Sidebar list and image list refresh for the newly selected root.
 
 Actual:
 - Dialog behavior:
-- Directory update behavior:
-
-### 4.2 Folder Switch via UI Buttons
-
-Steps:
-1. Click header folder button.
-2. Click footer `Open` button.
-
-Expected:
-- Both paths mirror `Ctrl+O` behavior.
-- Active run context switches and image list refreshes.
-
-Actual:
-- Header button:
-- Footer button:
+- Root update behavior:
+- Refresh behavior:
 
 ### 4.3 Basic Usability Smoke
 
@@ -100,7 +103,7 @@ Actual:
 
 Fill this table for each validated session.
 
-| Session | Startup OK | Ctrl+O OK | Header/Footer Open OK | Folder Switch Refresh OK | Notes |
+| Session | Startup OK | Ctrl+O Toggle OK | Sidebar Root Picker OK | Root Switch Refresh OK | Notes |
 |---|---|---|---|---|---|
 | X11 |  |  |  |  |  |
 | Wayland |  |  |  |  |  |

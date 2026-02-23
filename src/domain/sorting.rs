@@ -7,6 +7,7 @@ pub enum SortKey {
     Filesystem,
     CreatedAt,
     LastModified,
+    Size,
     Alphabetical,
 }
 
@@ -38,6 +39,7 @@ fn compare_entries(a: &ImageEntry, b: &ImageEntry, mode: SortMode) -> Ordering {
             .cmp(&b.path.file_name().and_then(|s| s.to_str())),
         SortKey::CreatedAt => a.meta.created.cmp(&b.meta.created),
         SortKey::LastModified => a.meta.modified.cmp(&b.meta.modified),
+        SortKey::Size => a.meta.size.cmp(&b.meta.size),
     };
 
     match mode.direction {

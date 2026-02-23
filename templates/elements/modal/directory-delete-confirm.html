@@ -1,0 +1,15 @@
+<modal-confirm
+    id="modal"
+    data-init="window.piclrInitModal?.(document.getElementById('modal'))"
+    data-on:click="if (evt.target === evt.currentTarget || evt.target.tagName === 'MODAL-BACKDROP') { @post('/cmd/close') }"
+>
+    <modal-backdrop></modal-backdrop>
+    <modal-card>
+        <h2>⚠️ Delete directory?</h2>
+        <p>This action is destructive and cannot be undone.</p>
+        <command-list>
+            <button autofocus data-on:click="@post('/cmd/close')">Cancel</button>
+            <button data-on:click="@post('/cmd/sidebar/delete/confirm')">Delete</button>
+        </command-list>
+    </modal-card>
+</modal-confirm>

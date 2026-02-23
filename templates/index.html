@@ -4,6 +4,7 @@
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>piclr</title>
+        <link rel="icon" href="/favicon.ico" type="image/svg+xml" />
         <link rel="stylesheet" href="/assets/app.css" />
         <script type="module" src="/assets/datastar.js"></script>
         <script>
@@ -25,113 +26,151 @@
                     requestAnimationFrame(() => current.scrollIntoView({ block: "center" }));
                 };
 
-                const updateDirectorySignal = (directoryPath) => {
-                    if (!directoryPath) return;
-                    const signalInput = document.getElementById("directory-path-signal");
-                    if (!(signalInput instanceof HTMLInputElement)) return;
-                    signalInput.value = directoryPath;
-                    signalInput.dispatchEvent(new Event("input", { bubbles: true }));
-                    signalInput.dispatchEvent(new Event("change", { bubbles: true }));
+                window.piclrInitSidebarList = (list) => {
+                    if (!(list instanceof HTMLElement)) return;
+                    const current = list.querySelector(".log-entry-current");
+                    if (!(current instanceof HTMLElement)) return;
+                    requestAnimationFrame(() =>
+                        current.scrollIntoView({ block: "nearest", inline: "nearest" }),
+                    );
                 };
-                window.piclrSetDirectoryPath = updateDirectorySignal;
 
-                window.piclrOpenDirectoryPicker = async () => {
+                window.piclrSelectRootDirectory = async () => {
                     if (!directorySelectionEnabled) {
                         return;
                     }
-                    if (window.__TAURI__?.core?.invoke) {
-                        try {
-                            const selectedDirectoryPath = await window.__TAURI__.core.invoke("pick_directory");
-                            if (selectedDirectoryPath) {
-                                void updateDirectorySignal(selectedDirectoryPath);
-                            }
-                            return;
-                        } catch (_) {
-                            return;
-                        }
+                    const tauriInvoke =
+                        window.__TAURI__?.core?.invoke ||
+                        window.__TAURI__?.invoke ||
+                        window.__TAURI_INTERNALS__?.invoke;
+                    if (typeof tauriInvoke !== "function") {
+                        return;
                     }
-                    if (typeof window.showDirectoryPicker === "function") {
-                        try {
-                            const handle = await window.showDirectoryPicker({ mode: "read" });
-                            const selectedDirectoryPath = handle?.path || handle?.fullPath || handle?.name || "";
-                            if (selectedDirectoryPath) {
-                                void updateDirectorySignal(selectedDirectoryPath);
-                                return;
-                            }
-                        } catch (_) {
-                            return;
-                        }
+                    let selected = null;
+                    try {
+                        selected = await tauriInvoke("pick_directory");
+                    } catch {
+                        return;
                     }
-                    const input = document.getElementById("directory-picker");
-                    if (!(input instanceof HTMLInputElement)) return;
-                    input.click();
+                    if (typeof selected !== "string" || selected.trim().length === 0) {
+                        return;
+                    }
+                    await fetch("/cmd/sidebar/root/select", {
+                        method: "POST",
+                        headers: { "content-type": "application/json" },
+                        body: JSON.stringify({ path: selected }),
+                    });
+                };
+
+                window.piclrPromptRenameDirectory = () => {
+                    const nextName = window.prompt("Rename directory to:", "");
+                    if (!nextName) {
+                        return;
+                    }
+                    const signalInput = document.getElementById("directory-rename-signal");
+                    if (!(signalInput instanceof HTMLInputElement)) return;
+                    signalInput.value = nextName;
+                    signalInput.dispatchEvent(new Event("input", { bubbles: true }));
+                    signalInput.dispatchEvent(new Event("change", { bubbles: true }));
+                };
+
+                window.piclrHandleModalKeydown = (evt) => {
+                    const modal = document.getElementById("modal");
+                    if (!(modal instanceof HTMLElement) || modal.tagName === "MODAL-NONE") {
+                        return false;
+                    }
+                    const buttons = Array.from(
+                        modal.querySelectorAll("button:not([disabled])"),
+                    );
+                    if (buttons.length === 0) {
+                        return false;
+                    }
+                    const current = document.activeElement;
+                    const index = buttons.indexOf(current);
+
+                    if (
+                        evt.key === "ArrowLeft" ||
+                        evt.key === "ArrowUp" ||
+                        evt.key === "ArrowRight" ||
+                        evt.key === "ArrowDown"
+                    ) {
+                        const step = evt.key === "ArrowLeft" || evt.key === "ArrowUp" ? -1 : 1;
+                        const nextIndex =
+                            index >= 0
+                                ? (index + step + buttons.length) % buttons.length
+                                : step > 0
+                                  ? 0
+                                  : buttons.length - 1;
+                        buttons[nextIndex].focus({ preventScroll: true });
+                        return true;
+                    }
+
+                    if (evt.key === "Enter") {
+                        if (index >= 0) {
+                            buttons[index].click();
+                        } else {
+                            buttons[0].focus({ preventScroll: true });
+                        }
+                        return true;
+                    }
+
+                    return false;
                 };
             })();
         </script>
     </head>
     <body
         id="app"
+        data-signals:sidebar-list-len="0"
+        data-signals:sidebar-selected-index="-1"
+        data-signals:sidebar-selected-kind="''"
+        data-signals:sidebar-selected-parent="false"
         data-init="@get('/events', { openWhenHidden: true })"
         data-on:keydown="
-            if (evt.key === 'ArrowLeft') { evt.preventDefault(); @post('/cmd/left', { requestCancellation: 'none' }) }
-            if (evt.key === 'ArrowRight') { evt.preventDefault(); @post('/cmd/right', { requestCancellation: 'none' }) }
-            if (evt.key === 'h' || evt.key === 'H') { evt.preventDefault(); @post('/cmd/left', { requestCancellation: 'none' }) }
-            if (evt.key === 'l' || evt.key === 'L') { evt.preventDefault(); @post('/cmd/right', { requestCancellation: 'none' }) }
-            if (evt.key === 'j' || evt.key === 'J') { evt.preventDefault(); @post('/cmd/next', { requestCancellation: 'none' }) }
-            if (evt.key === 'k' || evt.key === 'K') { evt.preventDefault(); @post('/cmd/prev', { requestCancellation: 'none' }) }
-            if (evt.key === 'ArrowUp' && evt.shiftKey) { evt.preventDefault(); @post('/cmd/jump-prev', { requestCancellation: 'none' }) }
-            if (evt.key === 'ArrowDown' && evt.shiftKey) { evt.preventDefault(); @post('/cmd/jump-next', { requestCancellation: 'none' }) }
-            if (evt.key === 'J' && evt.shiftKey) { evt.preventDefault(); @post('/cmd/jump-next', { requestCancellation: 'none' }) }
-            if (evt.key === 'K' && evt.shiftKey) { evt.preventDefault(); @post('/cmd/jump-prev', { requestCancellation: 'none' }) }
-            if (evt.key === 'ArrowUp' && !evt.shiftKey) { evt.preventDefault(); @post('/cmd/prev', { requestCancellation: 'none' }) }
-            if (evt.key === 'ArrowDown' && !evt.shiftKey) { evt.preventDefault(); @post('/cmd/next', { requestCancellation: 'none' }) }
-            if ((evt.key === 'o' || evt.key === 'O') && evt.ctrlKey) { evt.preventDefault(); window.piclrOpenDirectoryPicker?.() }
-            if (evt.key === 'A' && evt.shiftKey) { evt.preventDefault(); @post('/cmd/apply', { requestCancellation: 'none' }) }
-            if (evt.key === 'u' || evt.key === 'U') { evt.preventDefault(); @post('/cmd/undo', { requestCancellation: 'none' }) }
-            if (evt.key === 'q' || evt.key === 'Q') { evt.preventDefault(); @post('/cmd/queue/show', { requestCancellation: 'none' }) }
-            if (evt.key === 'i' || evt.key === 'I') { evt.preventDefault(); @post('/cmd/files/show', { requestCancellation: 'none' }) }
-            if (evt.key === '?') { evt.preventDefault(); @post('/cmd/help', { requestCancellation: 'none' }) }
-            if (evt.key === 'Escape') { evt.preventDefault(); @post('/cmd/close', { requestCancellation: 'none' }) }
+            const modalHandled = window.piclrHandleModalKeydown?.(evt)
+            if (modalHandled) {
+                evt.preventDefault()
+                evt.stopPropagation()
+            } else {
+                if (evt.key === 'ArrowLeft' && !($sidebarExpanded && $sidebarSelectedKind === 'directory' && $currentPath === '/')) { evt.preventDefault(); @post('/cmd/left') }
+                if (evt.key === 'ArrowRight') { evt.preventDefault(); @post('/cmd/right') }
+                if ((evt.key === 'h' || evt.key === 'H') && !($sidebarExpanded && $sidebarSelectedKind === 'directory' && $currentPath === '/')) { evt.preventDefault(); @post('/cmd/left') }
+                if (evt.key === 'l' || evt.key === 'L') { evt.preventDefault(); @post('/cmd/right') }
+                if ((evt.key === 'j' || evt.key === 'J') && (!$sidebarExpanded ? $counterImageIndex < $counterImageTotal : $sidebarSelectedIndex < ($sidebarListLen - 1))) { evt.preventDefault(); @post('/cmd/next') }
+                if ((evt.key === 'k' || evt.key === 'K') && (!$sidebarExpanded ? $counterImageIndex > 1 : $sidebarSelectedIndex > 0)) { evt.preventDefault(); @post('/cmd/prev') }
+                if (evt.key === 'ArrowUp' && evt.shiftKey) { evt.preventDefault(); @post('/cmd/jump-prev') }
+                if (evt.key === 'ArrowDown' && evt.shiftKey) { evt.preventDefault(); @post('/cmd/jump-next') }
+                if (evt.key === 'J' && evt.shiftKey) { evt.preventDefault(); @post('/cmd/jump-next') }
+                if (evt.key === 'K' && evt.shiftKey) { evt.preventDefault(); @post('/cmd/jump-prev') }
+                if (evt.key === 'ArrowUp' && !evt.shiftKey && (!$sidebarExpanded ? $counterImageIndex > 1 : $sidebarSelectedIndex > 0)) { evt.preventDefault(); @post('/cmd/prev') }
+                if (evt.key === 'ArrowDown' && !evt.shiftKey && (!$sidebarExpanded ? $counterImageIndex < $counterImageTotal : $sidebarSelectedIndex < ($sidebarListLen - 1))) { evt.preventDefault(); @post('/cmd/next') }
+                if (evt.key === 'Home') { evt.preventDefault(); @post('/cmd/home') }
+                if (evt.key === 'End') { evt.preventDefault(); @post('/cmd/end') }
+                if ((evt.key === 'o' || evt.key === 'O') && evt.ctrlKey) { evt.preventDefault(); @post('/cmd/sidebar/toggle') }
+                if (evt.key === 'Enter' && evt.ctrlKey && $sidebarExpanded && $sidebarSelectedKind === 'directory' && !$sidebarSelectedParent) { evt.preventDefault(); window.piclrPromptRenameDirectory?.() }
+                if (evt.key === 'Enter' && !evt.ctrlKey && $sidebarExpanded && $sidebarSelectedKind === 'directory') { evt.preventDefault(); @post('/cmd/sidebar/open') }
+                if (evt.key === 'Delete' && evt.ctrlKey && $sidebarExpanded && $sidebarSelectedKind === 'directory' && !$sidebarSelectedParent) { evt.preventDefault(); @post('/cmd/sidebar/delete') }
+                if (evt.key === 'A' && evt.shiftKey) { evt.preventDefault(); @post('/cmd/apply') }
+                if (evt.key === 'u' || evt.key === 'U') { evt.preventDefault(); @post('/cmd/undo') }
+                if (evt.key === 'q' || evt.key === 'Q') { evt.preventDefault(); @post('/cmd/queue/show') }
+                if (evt.key === '?') { evt.preventDefault(); @post('/cmd/help') }
+                if (evt.key === 'Escape') { evt.preventDefault(); @post('/cmd/close') }
+            }
         "
     >
-            {% include "elements/modal/none.html" %}
-            {% include "elements/header.html" %}
+        {% include "elements/modal/none.html" %}
+        {% include "elements/header.html" %}
+        <main-layout id="main-layout" data-class:sidebar-collapsed="!$sidebarExpanded">
+            {% include "elements/sidebar.html" %}
             {% include "elements/image-viewer-empty.html" %}
-            {% include "elements/footer.html" %}
+        </main-layout>
+        {% include "elements/footer.html" %}
         <input
-            id="directory-picker"
-            type="file"
-            webkitdirectory
-            directory
-            hidden
-            data-on:change="
-                const files = Array.from(evt.target.files || [])
-                if (files.length === 0) { return }
-                const first = files[0]
-                let selectedDirectoryPath = ''
-                if (first.path) {
-                    selectedDirectoryPath = first.path.replace(/[\\\\/][^\\\\/]+$/, '')
-                }
-                if (!selectedDirectoryPath && first.webkitRelativePath) {
-                    selectedDirectoryPath = first.webkitRelativePath.split('/')[0] || ''
-                }
-                if (selectedDirectoryPath) {
-                    const signalInput = document.getElementById('directory-path-signal')
-                    if (signalInput instanceof HTMLInputElement) {
-                        signalInput.value = selectedDirectoryPath
-                        signalInput.dispatchEvent(new Event('input', { bubbles: true }))
-                        signalInput.dispatchEvent(new Event('change', { bubbles: true }))
-                    }
-                }
-                evt.target.value = ''
-            "
-        />
-        <input
-            id="directory-path-signal"
+            id="directory-rename-signal"
             type="text"
             hidden
-            data-bind:directory-path
-            data-on:change="@patch('/cmd/update-directory')"
+            data-bind:directory-name
+            data-on:change="@patch('/cmd/sidebar/rename')"
         />
     </body>
 </html>

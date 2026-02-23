@@ -16,6 +16,7 @@ fn sample_image(id: u64, path: &str, order: usize) -> ImageEntry {
         meta: ImageMeta {
             created: None,
             modified: None,
+            size: 0,
             orientation: None,
         },
     }

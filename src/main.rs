@@ -6,7 +6,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use piclr::app::{AppConfig, AppContext};
 use piclr::domain::{ActionMapping, AppState};
-use piclr::fs::scan_images;
+use piclr::fs::{scan_directories, scan_images};
 use piclr::web::router;
 
 #[derive(Parser, Debug)]
@@ -27,8 +27,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     let Cli { path, port } = cli;
 
+    let launch_root = if let Some(path) = path {
+        path
+    } else {
+        std::env::current_dir()?
+    };
     let config = AppConfig {
-        initial_path: path.clone(),
+        initial_path: Some(launch_root.clone()),
         ..Default::default()
     };
 
@@ -43,13 +48,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let ctx = AppContext::new(state, config);
 
-    if let Some(path) = path {
-        let images = scan_images(&path).await;
-        let mut guard = ctx.state.write().await;
-        guard.transition_to_scanning();
-        guard.transition_to_ready(images, Some(path));
-        guard.transition_to_viewing();
-    }
+    let images = scan_images(&launch_root).await;
+    let directories = scan_directories(&launch_root, &launch_root).await;
+    let mut guard = ctx.state.write().await;
+    guard.transition_to_scanning();
+    guard.transition_to_ready(Vec::new(), Some(launch_root.clone()));
+    guard.transition_to_viewing();
+    guard.state_mut().set_directory_snapshot(
+        images,
+        directories,
+        Some(launch_root.clone()),
+        Some(launch_root),
+    );
+    drop(guard);
 
     let app = router(ctx);
     let bind_port = port.unwrap_or(0);

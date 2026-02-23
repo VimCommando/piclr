@@ -2925,6 +2925,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "ureq",
+ "urlencoding",
  "walkdir",
 ]
 
