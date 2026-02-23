@@ -74,6 +74,9 @@ pub struct AppStateInner {
     pub pending_delete_directory_path: Option<PathBuf>,
     pub selected_entry_id: Option<u64>,
     pub sidebar_expanded: bool,
+    pub queue_sidebar_visible: bool,
+    pub queue_focus: bool,
+    pub selected_queue_image_id: Option<u64>,
     pub directory_actions_entry_id: Option<u64>,
     pub active_modal: Option<ModalView>,
     pub projection: ReadModelProjection,
@@ -101,6 +104,7 @@ pub struct ReadModelProjection {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModalView {
+    ApplyConfirm,
     DeleteConfirm,
     QueueNotEmptyConfirm,
     DirectoryDeleteConfirm,
@@ -136,6 +140,9 @@ impl AppStateInner {
             pending_delete_directory_path: None,
             selected_entry_id: None,
             sidebar_expanded: false,
+            queue_sidebar_visible: false,
+            queue_focus: false,
+            selected_queue_image_id: None,
             directory_actions_entry_id: None,
             active_modal: None,
             projection: ReadModelProjection::default(),
@@ -286,6 +293,7 @@ impl AppStateInner {
             self.update_stack_projection(5);
             self.update_preload();
             self.selected_entry_id = Some(image_id);
+            self.queue_focus = false;
             self.directory_actions_entry_id = None;
             return true;
         }
@@ -295,6 +303,7 @@ impl AppStateInner {
     pub fn select_entry_by_id(&mut self, entry_id: u64) -> bool {
         if let Some(entry) = self.nav_entries.iter().find(|entry| entry.id == entry_id) {
             self.selected_entry_id = Some(entry_id);
+            self.queue_focus = false;
             self.directory_actions_entry_id = None;
             if let Some(image_id) = entry.image_id {
                 return self.select_image_by_id(image_id);
@@ -408,6 +417,205 @@ impl AppStateInner {
 
     pub fn toggle_sidebar(&mut self) {
         self.sidebar_expanded = !self.sidebar_expanded;
+        if !self.sidebar_expanded && self.queue_sidebar_visible {
+            self.activate_queue_focus();
+        }
+    }
+
+    pub fn toggle_queue_sidebar(&mut self) {
+        self.queue_sidebar_visible = !self.queue_sidebar_visible;
+        if self.queue_sidebar_visible {
+            self.queue_focus = true;
+            self.ensure_queue_selection();
+        } else {
+            self.queue_focus = false;
+        }
+    }
+
+    pub fn activate_queue_focus(&mut self) {
+        if !self.queue_sidebar_visible {
+            return;
+        }
+        self.queue_focus = true;
+        self.ensure_queue_selection();
+    }
+
+    pub fn queue_is_selected(&self) -> bool {
+        self.queue_sidebar_visible && self.queue_focus && self.selected_queue_image_id.is_some()
+    }
+
+    pub fn select_queue_next(&mut self) -> bool {
+        if self.queued_ids.is_empty() {
+            return false;
+        }
+        self.activate_queue_focus();
+        let current_pos = self
+            .selected_queue_image_id
+            .and_then(|id| self.queued_ids.iter().position(|queued_id| *queued_id == id));
+        let next_pos = match current_pos {
+            Some(pos) if pos + 1 < self.queued_ids.len() => pos + 1,
+            Some(_) => return false,
+            None => 0,
+        };
+        self.selected_queue_image_id = self.queued_ids.get(next_pos).copied();
+        true
+    }
+
+    pub fn select_queue_prev(&mut self) -> bool {
+        if self.queued_ids.is_empty() {
+            return false;
+        }
+        self.activate_queue_focus();
+        let current_pos = self
+            .selected_queue_image_id
+            .and_then(|id| self.queued_ids.iter().position(|queued_id| *queued_id == id));
+        let prev_pos = match current_pos {
+            Some(pos) if pos > 0 => pos - 1,
+            Some(_) => return false,
+            None => 0,
+        };
+        self.selected_queue_image_id = self.queued_ids.get(prev_pos).copied();
+        true
+    }
+
+    pub fn select_queue_first(&mut self) -> bool {
+        if self.queued_ids.is_empty() {
+            return false;
+        }
+        self.activate_queue_focus();
+        self.selected_queue_image_id = self.queued_ids.front().copied();
+        true
+    }
+
+    pub fn select_queue_last(&mut self) -> bool {
+        if self.queued_ids.is_empty() {
+            return false;
+        }
+        self.activate_queue_focus();
+        self.selected_queue_image_id = self.queued_ids.back().copied();
+        true
+    }
+
+    pub fn select_queue_item_by_id(&mut self, image_id: u64) -> bool {
+        if !self.queued_ids.iter().any(|queued_id| *queued_id == image_id) {
+            return false;
+        }
+        self.activate_queue_focus();
+        self.selected_queue_image_id = Some(image_id);
+        true
+    }
+
+    pub fn queue_selected_item_for_apply(&self) -> Option<(u64, PathBuf, ActionConfig, Option<u64>)> {
+        let selected = self.selected_queue_image_id?;
+        let image = self.images.iter().find(|image| image.id == selected)?;
+        let action = image.queued_action.clone()?;
+        Some((selected, image.path.clone(), action, image.rename_sequence))
+    }
+
+    pub fn remove_selected_queue_item(&mut self) -> Option<u64> {
+        let selected = self.selected_queue_image_id?;
+        let selected_pos = self
+            .queued_ids
+            .iter()
+            .position(|queued_id| *queued_id == selected)?;
+        let image = self.images.iter_mut().find(|image| image.id == selected)?;
+        image.queued_action = None;
+        image.decision = DecisionState::Undecided;
+        image.rename_sequence = None;
+        self.rebuild_queue_from_order();
+        self.rebuild_projection();
+        if self.queued_ids.is_empty() {
+            self.selected_queue_image_id = None;
+            self.queue_focus = false;
+        } else {
+            let next_pos = selected_pos.min(self.queued_ids.len().saturating_sub(1));
+            self.selected_queue_image_id = self.queued_ids.get(next_pos).copied();
+        }
+        Some(selected)
+    }
+
+    pub fn override_selected_queue_action(&mut self, side: DecisionSide) -> bool {
+        let selected = match self.selected_queue_image_id {
+            Some(id) => id,
+            None => return false,
+        };
+        if !self.queued_ids.iter().any(|queued_id| *queued_id == selected) {
+            return false;
+        }
+        let action = match side {
+            DecisionSide::Left => self.action_mapping.left.clone(),
+            DecisionSide::Right => self.action_mapping.right.clone(),
+        };
+        let next_rename = self.rename_counter;
+        let mut consumed_rename = false;
+        let Some(image) = self.images.iter_mut().find(|image| image.id == selected) else {
+            return false;
+        };
+        if let ActionConfig::Rename { .. } = action {
+            if image.rename_sequence.is_none() {
+                image.rename_sequence = Some(next_rename);
+                consumed_rename = true;
+            }
+        } else {
+            image.rename_sequence = None;
+        }
+        image.decision = DecisionState::Decided {
+            side,
+            action: action.clone(),
+        };
+        image.queued_action = Some(action);
+        if consumed_rename {
+            self.rename_counter += 1;
+        }
+        self.rebuild_queue_from_order();
+        self.rebuild_projection();
+        true
+    }
+
+    pub fn apply_selected_queue_action_result(&mut self, image_id: u64, action: &ActionConfig) -> bool {
+        let image_idx = match self.images.iter().position(|image| image.id == image_id) {
+            Some(idx) => idx,
+            None => return false,
+        };
+
+        let remove_image = matches!(
+            action,
+            ActionConfig::Delete | ActionConfig::Move { .. } | ActionConfig::Rename { .. }
+        );
+
+        if remove_image {
+            self.images.remove(image_idx);
+            self.order = self
+                .order
+                .iter()
+                .filter_map(|idx| {
+                    if *idx == image_idx {
+                        None
+                    } else if *idx > image_idx {
+                        Some(*idx - 1)
+                    } else {
+                        Some(*idx)
+                    }
+                })
+                .collect();
+            self.nav_entries.retain(|entry| entry.image_id != Some(image_id));
+            if self.order.is_empty() {
+                self.cursor = 0;
+            } else if self.cursor >= self.order.len() {
+                self.cursor = self.order.len() - 1;
+            }
+        } else if let Some(image) = self.images.get_mut(image_idx) {
+            image.decision = DecisionState::Undecided;
+            image.queued_action = None;
+            image.rename_sequence = None;
+        }
+
+        self.rebuild_queue_from_order();
+        self.rebuild_projection();
+        self.update_preload();
+        self.sync_selected_to_current_image();
+        self.directory_actions_entry_id = None;
+        true
     }
 
     pub fn close_directory_actions(&mut self) {
@@ -502,6 +710,8 @@ impl AppStateInner {
         self.rename_counter = 1;
         self.rebuild_projection();
         self.update_preload();
+        self.selected_queue_image_id = None;
+        self.queue_focus = false;
         self.directory_actions_entry_id = None;
     }
 
@@ -566,6 +776,8 @@ impl AppStateInner {
             image.queued_action = None;
         }
         self.queued_ids.clear();
+        self.selected_queue_image_id = None;
+        self.queue_focus = false;
         self.rebuild_projection_counters();
     }
 
@@ -588,6 +800,27 @@ impl AppStateInner {
                 }
             }
         }
+        self.ensure_queue_selection();
+    }
+
+    fn ensure_queue_selection(&mut self) {
+        if self.queued_ids.is_empty() {
+            self.selected_queue_image_id = None;
+            self.queue_focus = false;
+            return;
+        }
+        let selected_present = self
+            .selected_queue_image_id
+            .map(|selected| self.queued_ids.iter().any(|queued_id| *queued_id == selected))
+            .unwrap_or(false);
+        if selected_present {
+            return;
+        }
+        let from_current = self
+            .current()
+            .map(|image| image.id)
+            .filter(|current_id| self.queued_ids.iter().any(|queued_id| queued_id == current_id));
+        self.selected_queue_image_id = from_current.or_else(|| self.queued_ids.front().copied());
     }
 
     fn rebuild_nav_entries(&mut self, mut directories: Vec<PathBuf>) {

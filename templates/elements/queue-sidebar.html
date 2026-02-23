@@ -1,0 +1,47 @@
+<queue-panel id="queue-sidebar" class="{% if !view.queue_sidebar_visible %}collapsed{% endif %}">
+    <queue-header>
+        <button type="button" data-on:click="@post('/cmd/queue/show')">
+            ⏸️ Queue ({{ view.queue_count }})
+        </button>
+        <queue-tools>
+            <button class="icon-button" title="Reset queue" data-on:click="@post('/cmd/queue/reset')">🔄</button>
+            <button class="icon-button" title="Apply queue" data-on:click="@post('/cmd/apply')">▶️</button>
+        </queue-tools>
+    </queue-header>
+    <entry-list
+        id="queue-list"
+        data-init="window.piclrInitQueueSidebarList?.(document.getElementById('queue-list'))"
+        data-effect="
+            const rows = [...el.querySelectorAll('entry-line[data-image-id]')];
+            $queueListLen = rows.length;
+            const current = el.querySelector('entry-line.log-entry-current');
+            $queueSelectedIndex = current ? rows.indexOf(current) : -1;
+            window.piclrInitQueueSidebarList?.(el);
+            $selectedQueueItem
+        "
+    >
+        {% if view.queue_items.is_empty() %}
+        <entry-line class="tone-neutral sidebar-empty">
+            <entry-status><status-glyph class="none"></status-glyph></entry-status>
+            <entry-file>No queued actions.</entry-file>
+        </entry-line>
+        {% else %}
+        {% for item in view.queue_items %}
+        <entry-line
+            class="tone-{{ item.action_tone }}{% if item.selected %} log-entry-current{% endif %}{% if item.peer_active %} peer-active{% endif %}"
+            data-image-id="{{ item.image_id }}"
+            data-on:click="@post('/cmd/queue/select/{{ item.image_id }}')"
+        >
+            <entry-status><status-glyph class="{{ item.status_kind }}"></status-glyph></entry-status>
+            <entry-file>{{ item.file_label }}</entry-file>
+            {% if item.selected %}
+            <row-actions>
+                <button title="Apply selected action" data-on:click__stop="@post('/cmd/queue/apply-selected')">▶️</button>
+                <button title="Remove selected action" data-on:click__stop="@post('/cmd/queue/remove-selected')">↩️</button>
+            </row-actions>
+            {% endif %}
+        </entry-line>
+        {% endfor %}
+        {% endif %}
+    </entry-list>
+</queue-panel>

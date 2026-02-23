@@ -47,6 +47,7 @@ struct UiPatch {
     stack: bool,
     stack_reset: bool,
     sidebar: bool,
+    queue: bool,
     modals: bool,
     signals: bool,
 }
@@ -58,6 +59,7 @@ impl UiPatch {
         stack: true,
         stack_reset: true,
         sidebar: true,
+        queue: true,
         modals: true,
         signals: true,
     };
@@ -68,6 +70,7 @@ impl UiPatch {
         stack: true,
         stack_reset: false,
         sidebar: true,
+        queue: true,
         modals: false,
         signals: true,
     };
@@ -78,6 +81,7 @@ impl UiPatch {
         stack: false,
         stack_reset: false,
         sidebar: false,
+        queue: false,
         modals: true,
         signals: false,
     };
@@ -88,6 +92,7 @@ impl UiPatch {
         stack: true,
         stack_reset: false,
         sidebar: true,
+        queue: true,
         modals: true,
         signals: true,
     };
@@ -98,6 +103,7 @@ impl UiPatch {
         stack: true,
         stack_reset: true,
         sidebar: true,
+        queue: true,
         modals: true,
         signals: true,
     };
@@ -119,8 +125,14 @@ pub fn router(ctx: AppContext) -> Router {
         .route("/cmd/end", post(cmd_end))
         .route("/cmd/undo", post(cmd_undo))
         .route("/cmd/apply", post(cmd_apply))
+        .route("/cmd/apply/request", post(cmd_apply_request))
         .route("/cmd/apply-confirm", post(cmd_apply_confirm))
         .route("/cmd/queue/reset", post(cmd_reset_queue))
+        .route("/cmd/queue/prev", post(cmd_queue_prev))
+        .route("/cmd/queue/next", post(cmd_queue_next))
+        .route("/cmd/queue/select/{id}", post(cmd_queue_select))
+        .route("/cmd/queue/apply-selected", post(cmd_queue_apply_selected))
+        .route("/cmd/queue/remove-selected", post(cmd_queue_remove_selected))
         .route("/cmd/sidebar/toggle", post(cmd_toggle_sidebar))
         .route("/cmd/sidebar/root/select", post(cmd_sidebar_root_select))
         .route("/cmd/sidebar/open", post(cmd_sidebar_open))
@@ -272,7 +284,9 @@ async fn cmd_home(State(state): State<WebState>) -> impl IntoResponse {
     let mut guard = state.ctx.state.write().await;
     let app_state = guard.state_mut();
     app_state.close_directory_actions();
-    if app_state.sidebar_expanded {
+    if app_state.queue_is_selected() {
+        app_state.select_queue_first();
+    } else if app_state.sidebar_expanded {
         app_state.select_first_entry();
     } else {
         app_state.select_first_image();
@@ -287,7 +301,9 @@ async fn cmd_end(State(state): State<WebState>) -> impl IntoResponse {
     let mut guard = state.ctx.state.write().await;
     let app_state = guard.state_mut();
     app_state.close_directory_actions();
-    if app_state.sidebar_expanded {
+    if app_state.queue_is_selected() {
+        app_state.select_queue_last();
+    } else if app_state.sidebar_expanded {
         app_state.select_last_entry();
     } else {
         app_state.select_last_image();
@@ -323,12 +339,10 @@ async fn cmd_undo(State(state): State<WebState>) -> impl IntoResponse {
 }
 
 async fn cmd_apply(State(state): State<WebState>) -> impl IntoResponse {
-    {
-        let mut guard = state.ctx.state.write().await;
-        guard.state_mut().hide_view(ModalView::Queue);
-    }
-
     let needs_confirm = {
+        let mut guard = state.ctx.state.write().await;
+        guard.state_mut().hide_view(ModalView::ApplyConfirm);
+        drop(guard);
         let guard = state.ctx.state.read().await;
         let has_delete = guard
             .state()
@@ -365,11 +379,21 @@ async fn cmd_apply(State(state): State<WebState>) -> impl IntoResponse {
     StatusCode::NO_CONTENT
 }
 
+async fn cmd_apply_request(State(state): State<WebState>) -> impl IntoResponse {
+    let mut guard = state.ctx.state.write().await;
+    let app_state = guard.state_mut();
+    app_state.close_directory_actions();
+    app_state.show_view(ModalView::ApplyConfirm);
+    drop(guard);
+    let ctx = state.ctx.clone();
+    broadcast_patch(&ctx, UiPatch::MODALS_ONLY).await;
+    StatusCode::NO_CONTENT
+}
+
 async fn cmd_apply_confirm(State(state): State<WebState>) -> impl IntoResponse {
     {
         let mut guard = state.ctx.state.write().await;
         guard.state_mut().hide_view(ModalView::DeleteConfirm);
-        guard.state_mut().hide_view(ModalView::Queue);
     }
     let summary = apply_queue(&state.ctx).await;
     refresh_images_after_apply(&state.ctx).await;
@@ -395,6 +419,108 @@ async fn cmd_reset_queue(State(state): State<WebState>) -> impl IntoResponse {
     drop(guard);
     let ctx = state.ctx.clone();
     broadcast_patch(&ctx, UiPatch::RESET_QUEUE).await;
+    StatusCode::NO_CONTENT
+}
+
+async fn cmd_queue_prev(State(state): State<WebState>) -> impl IntoResponse {
+    let mut guard = state.ctx.state.write().await;
+    let app_state = guard.state_mut();
+    let moved = app_state.select_queue_prev();
+    if moved {
+        if let Some(selected) = app_state.selected_queue_image_id {
+            app_state.select_image_by_id(selected);
+            app_state.activate_queue_focus();
+        }
+    }
+    drop(guard);
+    let ctx = state.ctx.clone();
+    broadcast_patch(&ctx, navigation_patch(&ctx).await).await;
+    StatusCode::NO_CONTENT
+}
+
+async fn cmd_queue_next(State(state): State<WebState>) -> impl IntoResponse {
+    let mut guard = state.ctx.state.write().await;
+    let app_state = guard.state_mut();
+    let moved = app_state.select_queue_next();
+    if moved {
+        if let Some(selected) = app_state.selected_queue_image_id {
+            app_state.select_image_by_id(selected);
+            app_state.activate_queue_focus();
+        }
+    }
+    drop(guard);
+    let ctx = state.ctx.clone();
+    broadcast_patch(&ctx, navigation_patch(&ctx).await).await;
+    StatusCode::NO_CONTENT
+}
+
+async fn cmd_queue_select(State(state): State<WebState>, Path(id): Path<u64>) -> impl IntoResponse {
+    let mut guard = state.ctx.state.write().await;
+    let app_state = guard.state_mut();
+    let selected = app_state.select_queue_item_by_id(id);
+    if selected {
+        app_state.select_image_by_id(id);
+        app_state.activate_queue_focus();
+    }
+    drop(guard);
+    let ctx = state.ctx.clone();
+    broadcast_patch(&ctx, navigation_patch(&ctx).await).await;
+    if selected {
+        StatusCode::NO_CONTENT
+    } else {
+        StatusCode::NOT_FOUND
+    }
+}
+
+async fn cmd_queue_apply_selected(State(state): State<WebState>) -> impl IntoResponse {
+    let selected = {
+        let guard = state.ctx.state.read().await;
+        guard.state().queue_selected_item_for_apply()
+    };
+    let Some((image_id, path, action, rename_sequence)) = selected else {
+        return StatusCode::NO_CONTENT;
+    };
+
+    let (root_dir, destructive) = {
+        let guard = state.ctx.state.read().await;
+        (
+            guard.state().root_dir.clone(),
+            state.ctx.config.destructive_delete,
+        )
+    };
+    let Some(root_dir) = root_dir else {
+        return StatusCode::NO_CONTENT;
+    };
+    let config = FsConfig::new(root_dir, destructive);
+    let apply_result = apply_action(&config, &path, &action, rename_sequence).await;
+    if let Err(err) = apply_result {
+        warn!(%err, path = %path.display(), "Failed to apply selected queued action");
+        return StatusCode::NO_CONTENT;
+    }
+
+    {
+        let mut guard = state.ctx.state.write().await;
+        let app_state = guard.state_mut();
+        app_state.apply_selected_queue_action_result(image_id, &action);
+    }
+    let ctx = state.ctx.clone();
+    // Force a full viewer/stack refresh so removed files immediately disappear
+    // from the image stack after single-item queue apply.
+    broadcast_patch(&ctx, UiPatch::ALL).await;
+    StatusCode::NO_CONTENT
+}
+
+async fn cmd_queue_remove_selected(State(state): State<WebState>) -> impl IntoResponse {
+    let removed = {
+        let mut guard = state.ctx.state.write().await;
+        guard.state_mut().remove_selected_queue_item()
+    };
+    let Some(image_id) = removed else {
+        return StatusCode::NO_CONTENT;
+    };
+    let ctx = state.ctx.clone();
+    broadcast_patch(&ctx, navigation_patch(&ctx).await).await;
+    patch_stack_card_if_visible(&ctx, image_id).await;
     StatusCode::NO_CONTENT
 }
 
@@ -732,14 +858,10 @@ async fn cmd_show_queue(State(state): State<WebState>) -> impl IntoResponse {
     let mut guard = state.ctx.state.write().await;
     let app_state = guard.state_mut();
     app_state.close_directory_actions();
-    if app_state.active_modal == Some(ModalView::Queue) {
-        app_state.close_view();
-    } else {
-        app_state.show_view(ModalView::Queue);
-    }
+    app_state.toggle_queue_sidebar();
     drop(guard);
     let ctx = state.ctx.clone();
-    broadcast_patch(&ctx, UiPatch::MODALS_ONLY).await;
+    broadcast_patch(&ctx, UiPatch::VIEWER_AND_SIGNALS).await;
     StatusCode::NO_CONTENT
 }
 
@@ -762,7 +884,6 @@ async fn cmd_select(State(state): State<WebState>, Path(id): Path<u64>) -> impl 
     let mut guard = state.ctx.state.write().await;
     let selected = guard.state_mut().select_entry_by_id(id);
     if selected {
-        guard.state_mut().hide_view(ModalView::Queue);
         guard.state_mut().close_directory_actions();
     }
     drop(guard);
@@ -1161,6 +1282,16 @@ async fn build_patch_events(ctx: &AppContext, patch: UiPatch) -> Vec<Event> {
         events.push(patch.write_as_axum_sse_event());
     }
 
+    if patch.queue {
+        let html = QueueSidebarTemplate { view: &view }
+            .render()
+            .unwrap_or_default();
+        let patch = PatchElements::new(html)
+            .selector("#queue-sidebar")
+            .mode(ElementPatchMode::Outer);
+        events.push(patch.write_as_axum_sse_event());
+    }
+
     if patch.stack {
         if view.total > 0 {
             events.extend(
@@ -1299,6 +1430,9 @@ fn counter_signals_json(view: &AppView) -> String {
         "selectedSidebarEntry": view.selected_sidebar_entry,
         "currentPath": view.current_path_label,
         "sidebarExpanded": view.sidebar_expanded,
+        "queueSidebarVisible": view.queue_sidebar_visible,
+        "queueSelected": view.queue_selected,
+        "selectedQueueItem": view.selected_queue_item,
         "directorySelectEnabled": view.directory_select_enabled
     })
     .to_string()
@@ -1307,7 +1441,7 @@ fn counter_signals_json(view: &AppView) -> String {
 async fn navigation_patch(ctx: &AppContext) -> UiPatch {
     let guard = ctx.state.read().await;
     let state = guard.state();
-    if state.has_view(ModalView::Queue) {
+    if state.active_modal.is_some() {
         UiPatch::VIEWER_MODALS_AND_SIGNALS
     } else {
         UiPatch::VIEWER_AND_SIGNALS
@@ -1322,7 +1456,6 @@ async fn build_view(ctx: &AppContext) -> AppView {
     let index = state.cursor + 1;
     let current = state.current();
     let active_modal = state.active_modal;
-    let show_queue_modal = active_modal == Some(ModalView::Queue);
     let last_apply_result = state.last_apply_result.clone();
     let current_path_label = state
         .current_dir
@@ -1341,73 +1474,36 @@ async fn build_view(ctx: &AppContext) -> AppView {
                 })
         })
         .unwrap_or_else(|| "No directory selected".to_string());
-    let mut queue_items: Vec<QueueItem> = Vec::new();
-    let mut queue_has_current = false;
-    if show_queue_modal {
-        let current_id = current.map(|e| e.id).unwrap_or(0);
-        queue_items = state
-            .queued_ids
-            .iter()
-            .filter_map(|queued_id| state.images.iter().find(|image| image.id == *queued_id))
-            .filter_map(|image| {
-                let queued = image.queued_action.as_ref()?;
-                if image.id == current_id {
-                    queue_has_current = true;
-                }
-                Some(queue_item_from_action(
-                    image,
-                    queued,
-                    decision_side(image),
-                    state.root_dir.as_ref(),
-                ))
-            })
-            .collect();
-    }
-    let mut queue_insert_before_id: Option<u64> = None;
-    let mut queue_insert_at_end = false;
-    if show_queue_modal && !queue_items.is_empty() && !queue_has_current {
-        if let Some(current_id) = current.map(|entry| entry.id) {
-            let current_pos = state
-                .order
-                .iter()
-                .position(|idx| state.images.get(*idx).map(|image| image.id) == Some(current_id));
-            if let Some(current_pos) = current_pos {
-                let order_position_by_id = state
-                    .queued_ids
-                    .iter()
-                    .filter_map(|queued_id| {
-                        state
-                            .images
-                            .iter()
-                            .find(|image| image.id == *queued_id)
-                            .and_then(|image| {
-                                state
-                                    .order
-                                    .iter()
-                                    .position(|idx| {
-                                        state.images.get(*idx).map(|candidate| candidate.id)
-                                            == Some(image.id)
-                                    })
-                                    .map(|order_pos| (image.id, order_pos))
-                            })
-                    })
-                    .collect::<Vec<_>>();
-                if let Some((before_id, _)) = order_position_by_id
-                    .iter()
-                    .find(|(_, order_pos)| *order_pos > current_pos)
-                {
-                    queue_insert_before_id = Some(*before_id);
-                } else {
-                    queue_insert_at_end = true;
-                }
-            }
-        }
-    }
-    if let Some(before_id) = queue_insert_before_id {
-        queue_items
-            .iter_mut()
-            .filter(|item| item.image_id == before_id)
-            .for_each(|item| item.is_insert_before = true);
+    let sidebar_selected_id = if state.queue_focus {
+        None
+    } else {
+        state.selected_entry_id
+    };
+    let queue_selected_id = if state.queue_focus {
+        state.selected_queue_image_id
+    } else {
+        None
+    };
+
+    let mut queue_items: Vec<QueueItem> = state
+        .queued_ids
+        .iter()
+        .filter_map(|queued_id| state.images.iter().find(|image| image.id == *queued_id))
+        .filter_map(|image| {
+            let queued = image.queued_action.as_ref()?;
+            Some(queue_item_from_action(
+                image,
+                queued,
+                decision_side(image),
+                state.root_dir.as_ref(),
+            ))
+        })
+        .collect();
+    for item in &mut queue_items {
+        item.selected = Some(item.image_id) == queue_selected_id;
+        item.peer_active = !item.selected
+            && !state.queue_focus
+            && Some(item.image_id) == state.current().map(|image| image.id);
     }
     let sidebar_items = state
         .nav_entries
@@ -1420,7 +1516,8 @@ async fn build_view(ctx: &AppContext) -> AppView {
                     status_kind: "none".to_string(),
                     action_tone: "neutral".to_string(),
                     file_label: entry.label.clone(),
-                    selected: state.selected_entry_id == Some(entry.id),
+                    selected: sidebar_selected_id == Some(entry.id),
+                    peer_active: false,
                     is_parent_link: entry.is_parent_link,
                     path_hint: entry.rel_path.to_string_lossy().to_string(),
                 },
@@ -1449,7 +1546,10 @@ async fn build_view(ctx: &AppContext) -> AppView {
                         status_kind: queue_item.status_kind,
                         action_tone: queue_item.action_tone,
                         file_label: entry.label.clone(),
-                        selected: state.selected_entry_id == Some(entry.id),
+                        selected: sidebar_selected_id == Some(entry.id),
+                        peer_active: state.queue_focus
+                            && sidebar_selected_id != Some(entry.id)
+                            && state.selected_queue_image_id == Some(image.id),
                         is_parent_link: false,
                         path_hint: entry.rel_path.to_string_lossy().to_string(),
                     }
@@ -1470,6 +1570,9 @@ async fn build_view(ctx: &AppContext) -> AppView {
         selected_sort_mode: sort_mode_label(state.sort_mode),
         selected_sidebar_entry: state.selected_entry_id.unwrap_or(0),
         sidebar_expanded: state.sidebar_expanded,
+        queue_sidebar_visible: state.queue_sidebar_visible,
+        queue_selected: state.queue_is_selected(),
+        selected_queue_item: state.selected_queue_image_id.unwrap_or(0),
         current_image_id: current.map(|entry| entry.id).unwrap_or(0),
         current_path_label,
         left_action_label: action_config_label(&state.action_mapping.left),
@@ -1484,8 +1587,6 @@ async fn build_view(ctx: &AppContext) -> AppView {
         apply_failed: last_apply_result.as_ref().map(|r| r.failed).unwrap_or(0),
         apply_errors: last_apply_result.map(|r| r.errors).unwrap_or_default(),
         queue_items,
-        queue_insert_before_id,
-        queue_insert_at_end,
     }
 }
 
@@ -1498,6 +1599,9 @@ pub struct AppView {
     pub selected_sort_mode: String,
     pub selected_sidebar_entry: u64,
     pub sidebar_expanded: bool,
+    pub queue_sidebar_visible: bool,
+    pub queue_selected: bool,
+    pub selected_queue_item: u64,
     pub current_image_id: u64,
     pub current_path_label: String,
     pub left_action_label: String,
@@ -1512,8 +1616,6 @@ pub struct AppView {
     pub apply_failed: usize,
     pub apply_errors: Vec<String>,
     pub queue_items: Vec<QueueItem>,
-    pub queue_insert_before_id: Option<u64>,
-    pub queue_insert_at_end: bool,
 }
 
 fn sort_mode_label(mode: SortMode) -> String {
@@ -1536,6 +1638,7 @@ pub struct SidebarItem {
     pub action_tone: String,
     pub file_label: String,
     pub selected: bool,
+    pub peer_active: bool,
     pub is_parent_link: bool,
     pub path_hint: String,
 }
@@ -1552,7 +1655,8 @@ pub struct QueueItem {
     pub status_kind: String,
     pub action_tone: String,
     pub file_label: String,
-    pub is_insert_before: bool,
+    pub selected: bool,
+    pub peer_active: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -1662,7 +1766,8 @@ fn queue_item_from_action(
         status_kind,
         action_tone,
         file_label,
-        is_insert_before: false,
+        selected: false,
+        peer_active: false,
     }
 }
 
@@ -1677,7 +1782,8 @@ fn queue_item_none(image: &ImageEntry, root_dir: Option<&PathBuf>) -> QueueItem 
         status_kind: "none".to_string(),
         action_tone: "neutral".to_string(),
         file_label,
-        is_insert_before: false,
+        selected: false,
+        peer_active: false,
     }
 }
 
@@ -1724,6 +1830,12 @@ struct SidebarTemplate<'a> {
 }
 
 #[derive(Template)]
+#[template(path = "elements/queue-sidebar.html")]
+struct QueueSidebarTemplate<'a> {
+    view: &'a AppView,
+}
+
+#[derive(Template)]
 #[template(path = "elements/image-viewer.html")]
 struct ImageViewerTemplate {}
 
@@ -1732,14 +1844,12 @@ struct ImageViewerTemplate {}
 struct ImageViewerEmptyTemplate {}
 
 #[derive(Template)]
-#[template(path = "elements/modal/queue.html")]
-struct QueueModalTemplate<'a> {
-    view: &'a AppView,
-}
-
-#[derive(Template)]
 #[template(path = "elements/modal/confirm.html")]
 struct ConfirmModalTemplate {}
+
+#[derive(Template)]
+#[template(path = "elements/modal/apply-confirm.html")]
+struct ApplyConfirmModalTemplate {}
 
 #[derive(Template)]
 #[template(path = "elements/modal/queue-not-empty.html")]
@@ -1771,7 +1881,8 @@ fn render_image_card(card: &StackCard) -> String {
 
 fn render_active_modal(view: &AppView) -> String {
     match view.active_modal {
-        Some(ModalView::Queue) => QueueModalTemplate { view }.render().unwrap_or_default(),
+        Some(ModalView::Queue) => "<modal-none id=\"modal\"></modal-none>".to_string(),
+        Some(ModalView::ApplyConfirm) => ApplyConfirmModalTemplate {}.render().unwrap_or_default(),
         Some(ModalView::DeleteConfirm) => ConfirmModalTemplate {}.render().unwrap_or_default(),
         Some(ModalView::QueueNotEmptyConfirm) => {
             QueueNotEmptyModalTemplate {}.render().unwrap_or_default()
@@ -1792,8 +1903,8 @@ mod tests {
     use super::*;
     use crate::app::{AppConfig, AppContext};
     use crate::domain::{
-        ActionConfig, ActionMapping, AppState, DecisionState, ImageMeta, ModalView, SortDirection,
-        SortKey, SortMode,
+        ActionConfig, ActionMapping, AppState, DecisionSide, DecisionState, ImageMeta, ModalView,
+        SortDirection, SortKey, SortMode,
     };
     use crate::domain::undo::UndoEntry;
     use axum::body::Body;
@@ -1994,7 +2105,176 @@ mod tests {
         assert!(html.contains("@get('/events', { openWhenHidden: true })"));
         assert!(html.contains("@post('/cmd/left')"));
         assert!(html.contains("@post('/cmd/next')"));
+        assert!(html.contains("@post('/cmd/apply/request')"));
         assert!(html.contains("<button data-on:click=\"@post('/cmd/left')\">⬅️ Left</button>"));
+        assert!(html.contains("window.piclrInitQueueSidebarList"));
+        assert!(html.contains("outsideView"));
+    }
+
+    #[tokio::test]
+    async fn apply_request_shows_apply_confirmation_modal() {
+        let ctx = AppContext::new(sample_machine(true), AppConfig::default());
+        let response = cmd_apply_request(State(WebState { ctx: ctx.clone() }))
+            .await
+            .into_response();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        let guard = ctx.state.read().await;
+        assert_eq!(guard.state().active_modal, Some(ModalView::ApplyConfirm));
+    }
+
+    #[tokio::test]
+    async fn queue_toggle_uses_sidebar_not_modal() {
+        let ctx = AppContext::new(sample_machine(true), AppConfig::default());
+        let _ = cmd_show_queue(State(WebState { ctx: ctx.clone() })).await;
+
+        let axum::response::Html(html) = render_full_page(&ctx).await;
+        assert!(html.contains("id=\"queue-sidebar\""));
+        assert!(!html.contains("<modal-queue"));
+    }
+
+    #[tokio::test]
+    async fn selected_queue_row_shows_apply_and_undo_icons() {
+        let mapping = ActionMapping {
+            left: ActionConfig::Delete,
+            right: ActionConfig::Keep,
+        };
+        let sort_mode = SortMode {
+            key: SortKey::Filesystem,
+            direction: SortDirection::Asc,
+        };
+        let mut machine = AppState::new(true, mapping, sort_mode);
+        machine.transition_to_scanning();
+        machine.transition_to_ready(
+            vec![
+                sample_image(1, "/tmp/a.jpg", 0),
+                sample_image(2, "/tmp/b.jpg", 1),
+            ],
+            Some(PathBuf::from("/tmp")),
+        );
+        machine.transition_to_viewing();
+        machine.state_mut().apply_decision(DecisionSide::Left);
+        machine.state_mut().apply_decision(DecisionSide::Right);
+        machine.state_mut().toggle_queue_sidebar();
+        machine.state_mut().select_queue_last();
+
+        let ctx = AppContext::new(machine, AppConfig::default());
+        let axum::response::Html(html) = render_full_page(&ctx).await;
+        assert!(html.contains("/cmd/queue/apply-selected"));
+        assert!(html.contains("/cmd/queue/remove-selected"));
+    }
+
+    #[tokio::test]
+    async fn applying_selected_queue_item_preserves_remaining_queue() {
+        let mapping = ActionMapping {
+            left: ActionConfig::Delete,
+            right: ActionConfig::Keep,
+        };
+        let sort_mode = SortMode {
+            key: SortKey::Filesystem,
+            direction: SortDirection::Asc,
+        };
+        let mut machine = AppState::new(true, mapping, sort_mode);
+        machine.transition_to_scanning();
+        machine.transition_to_ready(
+            vec![
+                sample_image(1, "/tmp/a.jpg", 0),
+                sample_image(2, "/tmp/b.jpg", 1),
+                sample_image(3, "/tmp/c.jpg", 2),
+            ],
+            Some(PathBuf::from("/tmp")),
+        );
+        machine.transition_to_viewing();
+
+        machine.state_mut().apply_decision(DecisionSide::Right);
+        machine.state_mut().apply_decision(DecisionSide::Right);
+        machine.state_mut().apply_decision(DecisionSide::Right);
+        machine.state_mut().toggle_queue_sidebar();
+        machine.state_mut().select_queue_first();
+
+        let ctx = AppContext::new(machine, AppConfig::default());
+        let response = cmd_queue_apply_selected(State(WebState { ctx: ctx.clone() }))
+            .await
+            .into_response();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+        let guard = ctx.state.read().await;
+        assert_eq!(guard.state().projection().queue_count, 2);
+    }
+
+    #[tokio::test]
+    async fn applying_selected_delete_does_not_leave_stale_nav_file_entry() {
+        let mapping = ActionMapping {
+            left: ActionConfig::Delete,
+            right: ActionConfig::Keep,
+        };
+        let sort_mode = SortMode {
+            key: SortKey::Filesystem,
+            direction: SortDirection::Asc,
+        };
+        let mut machine = AppState::new(true, mapping, sort_mode);
+        machine.transition_to_scanning();
+        machine.transition_to_ready(
+            vec![
+                sample_image(1, "/tmp/a.jpg", 0),
+                sample_image(2, "/tmp/b.jpg", 1),
+            ],
+            Some(PathBuf::from("/tmp")),
+        );
+        machine.transition_to_viewing();
+
+        machine.state_mut().apply_decision(DecisionSide::Left);
+        machine.state_mut().apply_decision(DecisionSide::Right);
+        machine.state_mut().toggle_queue_sidebar();
+        machine.state_mut().select_queue_first();
+
+        let ctx = AppContext::new(machine, AppConfig::default());
+        let response = cmd_queue_apply_selected(State(WebState { ctx: ctx.clone() }))
+            .await
+            .into_response();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+        // Regression: build/render should not panic due to stale nav->image references.
+        let _ = build_view(&ctx).await;
+    }
+
+    #[tokio::test]
+    async fn undo_still_uses_stack_when_queue_is_selected() {
+        let mapping = ActionMapping {
+            left: ActionConfig::Delete,
+            right: ActionConfig::Keep,
+        };
+        let sort_mode = SortMode {
+            key: SortKey::Filesystem,
+            direction: SortDirection::Asc,
+        };
+        let mut machine = AppState::new(true, mapping, sort_mode);
+        machine.transition_to_scanning();
+        machine.transition_to_ready(
+            vec![
+                sample_image(1, "/tmp/a.jpg", 0),
+                sample_image(2, "/tmp/b.jpg", 1),
+            ],
+            Some(PathBuf::from("/tmp")),
+        );
+        machine.transition_to_viewing();
+
+        let first_outcome = machine.state_mut().apply_decision(DecisionSide::Left).unwrap();
+        machine.state_mut().record_undo(UndoEntry {
+            image_id: first_outcome.image_id,
+            previous_decision: first_outcome.previous_decision,
+            previous_queue: first_outcome.previous_queue,
+            previous_cursor: first_outcome.cursor_before,
+            undo_action: None,
+        });
+        machine.state_mut().apply_decision(DecisionSide::Right);
+        machine.state_mut().toggle_queue_sidebar();
+        machine.state_mut().select_queue_last();
+
+        let ctx = AppContext::new(machine, AppConfig::default());
+        let _ = cmd_undo(State(WebState { ctx: ctx.clone() })).await;
+        let guard = ctx.state.read().await;
+        assert_eq!(guard.state().projection().queue_count, 1);
+        assert_eq!(guard.state().undo_stack.len(), 0);
     }
 
     #[tokio::test]

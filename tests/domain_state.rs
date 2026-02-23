@@ -211,3 +211,114 @@ fn apply_actions_follow_queue_order() {
 
     assert_eq!(order, vec!["a.jpg", "b.jpg", "c.jpg"]);
 }
+
+#[test]
+fn queue_sidebar_selection_and_override_work() {
+    let mapping = ActionMapping {
+        left: ActionConfig::Delete,
+        right: ActionConfig::Keep,
+    };
+    let sort_mode = SortMode {
+        key: SortKey::Filesystem,
+        direction: SortDirection::Asc,
+    };
+    let mut machine = AppState::new(true, mapping, sort_mode);
+    machine.transition_to_scanning();
+    machine.transition_to_ready(
+        vec![
+            sample_image(1, "a.jpg", 0),
+            sample_image(2, "b.jpg", 1),
+            sample_image(3, "c.jpg", 2),
+        ],
+        Some(PathBuf::from(".")),
+    );
+    machine.transition_to_viewing();
+
+    machine.state_mut().apply_decision(DecisionSide::Right);
+    machine.state_mut().apply_decision(DecisionSide::Left);
+    machine.state_mut().apply_decision(DecisionSide::Right);
+
+    machine.state_mut().toggle_queue_sidebar();
+    assert!(machine.state().queue_sidebar_visible);
+    assert!(machine.state().queue_is_selected());
+
+    assert!(machine.state_mut().select_queue_first());
+    assert_eq!(machine.state().selected_queue_image_id, Some(1));
+    assert!(machine.state_mut().select_queue_last());
+    assert_eq!(machine.state().selected_queue_image_id, Some(3));
+
+    assert!(machine.state_mut().override_selected_queue_action(DecisionSide::Left));
+    let entry = machine
+        .state()
+        .images
+        .iter()
+        .find(|image| image.id == 3)
+        .unwrap();
+    match &entry.queued_action {
+        Some(ActionConfig::Delete) => {}
+        _ => panic!("expected selected queue action to be overridden to Delete"),
+    }
+}
+
+#[test]
+fn removing_selected_queue_item_updates_selection() {
+    let mapping = ActionMapping {
+        left: ActionConfig::Delete,
+        right: ActionConfig::Keep,
+    };
+    let sort_mode = SortMode {
+        key: SortKey::Filesystem,
+        direction: SortDirection::Asc,
+    };
+    let mut machine = AppState::new(true, mapping, sort_mode);
+    machine.transition_to_scanning();
+    machine.transition_to_ready(
+        vec![sample_image(1, "a.jpg", 0), sample_image(2, "b.jpg", 1)],
+        Some(PathBuf::from(".")),
+    );
+    machine.transition_to_viewing();
+
+    machine.state_mut().apply_decision(DecisionSide::Left);
+    machine.state_mut().apply_decision(DecisionSide::Right);
+    machine.state_mut().toggle_queue_sidebar();
+    assert!(machine.state_mut().select_queue_last());
+    assert_eq!(machine.state().selected_queue_image_id, Some(2));
+
+    let removed = machine.state_mut().remove_selected_queue_item();
+    assert_eq!(removed, Some(2));
+    assert_eq!(machine.state().projection().queue_count, 1);
+    assert_eq!(machine.state().selected_queue_image_id, Some(1));
+}
+
+#[test]
+fn closing_file_sidebar_keeps_focus_on_queue_when_queue_is_visible() {
+    let mapping = ActionMapping {
+        left: ActionConfig::Delete,
+        right: ActionConfig::Keep,
+    };
+    let sort_mode = SortMode {
+        key: SortKey::Filesystem,
+        direction: SortDirection::Asc,
+    };
+    let mut machine = AppState::new(true, mapping, sort_mode);
+    machine.transition_to_scanning();
+    machine.transition_to_ready(
+        vec![sample_image(1, "a.jpg", 0), sample_image(2, "b.jpg", 1)],
+        Some(PathBuf::from(".")),
+    );
+    machine.transition_to_viewing();
+
+    machine.state_mut().toggle_sidebar();
+    machine.state_mut().apply_decision(DecisionSide::Left);
+    machine.state_mut().toggle_queue_sidebar();
+    assert!(machine.state().queue_is_selected());
+
+    // Simulate user selecting files while both are visible.
+    machine.state_mut().queue_focus = false;
+    assert!(!machine.state().queue_is_selected());
+
+    // Closing file sidebar should hand focus back to queue selection.
+    machine.state_mut().toggle_sidebar();
+    assert!(!machine.state().sidebar_expanded);
+    assert!(machine.state().queue_is_selected());
+}

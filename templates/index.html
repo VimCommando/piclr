@@ -26,6 +26,21 @@
                     requestAnimationFrame(() => current.scrollIntoView({ block: "center" }));
                 };
 
+                window.piclrInitQueueSidebarList = (list) => {
+                    if (!(list instanceof HTMLElement)) return;
+                    const current = list.querySelector(".log-entry-current");
+                    if (!(current instanceof HTMLElement)) return;
+                    requestAnimationFrame(() => {
+                        const listRect = list.getBoundingClientRect();
+                        const itemRect = current.getBoundingClientRect();
+                        const outsideView =
+                            itemRect.top < listRect.top || itemRect.bottom > listRect.bottom;
+                        if (outsideView) {
+                            current.scrollIntoView({ block: "nearest", inline: "nearest" });
+                        }
+                    });
+                };
+
                 window.piclrInitSidebarList = (list) => {
                     if (!(list instanceof HTMLElement)) return;
                     const current = list.querySelector(".log-entry-current");
@@ -125,6 +140,11 @@
         data-signals:sidebar-selected-index="-1"
         data-signals:sidebar-selected-kind="''"
         data-signals:sidebar-selected-parent="false"
+        data-signals:queue-list-len="0"
+        data-signals:queue-selected-index="-1"
+        data-signals:queue-sidebar-visible="false"
+        data-signals:queue-selected="false"
+        data-signals:selected-queue-item="0"
         data-init="@get('/events', { openWhenHidden: true })"
         data-on:keydown="
             const modalHandled = window.piclrHandleModalKeydown?.(evt)
@@ -132,37 +152,43 @@
                 evt.preventDefault()
                 evt.stopPropagation()
             } else {
-                if (evt.key === 'ArrowLeft' && !($sidebarExpanded && $sidebarSelectedKind === 'directory' && $currentPath === '/')) { evt.preventDefault(); @post('/cmd/left') }
-                if (evt.key === 'ArrowRight') { evt.preventDefault(); @post('/cmd/right') }
-                if ((evt.key === 'h' || evt.key === 'H') && !($sidebarExpanded && $sidebarSelectedKind === 'directory' && $currentPath === '/')) { evt.preventDefault(); @post('/cmd/left') }
-                if (evt.key === 'l' || evt.key === 'L') { evt.preventDefault(); @post('/cmd/right') }
-                if ((evt.key === 'j' || evt.key === 'J') && (!$sidebarExpanded ? $counterImageIndex < $counterImageTotal : $sidebarSelectedIndex < ($sidebarListLen - 1))) { evt.preventDefault(); @post('/cmd/next') }
-                if ((evt.key === 'k' || evt.key === 'K') && (!$sidebarExpanded ? $counterImageIndex > 1 : $sidebarSelectedIndex > 0)) { evt.preventDefault(); @post('/cmd/prev') }
-                if (evt.key === 'ArrowUp' && evt.shiftKey) { evt.preventDefault(); @post('/cmd/jump-prev') }
-                if (evt.key === 'ArrowDown' && evt.shiftKey) { evt.preventDefault(); @post('/cmd/jump-next') }
-                if (evt.key === 'J' && evt.shiftKey) { evt.preventDefault(); @post('/cmd/jump-next') }
-                if (evt.key === 'K' && evt.shiftKey) { evt.preventDefault(); @post('/cmd/jump-prev') }
-                if (evt.key === 'ArrowUp' && !evt.shiftKey && (!$sidebarExpanded ? $counterImageIndex > 1 : $sidebarSelectedIndex > 0)) { evt.preventDefault(); @post('/cmd/prev') }
-                if (evt.key === 'ArrowDown' && !evt.shiftKey && (!$sidebarExpanded ? $counterImageIndex < $counterImageTotal : $sidebarSelectedIndex < ($sidebarListLen - 1))) { evt.preventDefault(); @post('/cmd/next') }
-                if (evt.key === 'Home') { evt.preventDefault(); @post('/cmd/home') }
-                if (evt.key === 'End') { evt.preventDefault(); @post('/cmd/end') }
-                if ((evt.key === 'o' || evt.key === 'O') && evt.ctrlKey) { evt.preventDefault(); @post('/cmd/sidebar/toggle') }
-                if (evt.key === 'Enter' && evt.ctrlKey && $sidebarExpanded && $sidebarSelectedKind === 'directory' && !$sidebarSelectedParent) { evt.preventDefault(); window.piclrPromptRenameDirectory?.() }
-                if (evt.key === 'Enter' && !evt.ctrlKey && $sidebarExpanded && $sidebarSelectedKind === 'directory') { evt.preventDefault(); @post('/cmd/sidebar/open') }
-                if (evt.key === 'Delete' && evt.ctrlKey && $sidebarExpanded && $sidebarSelectedKind === 'directory' && !$sidebarSelectedParent) { evt.preventDefault(); @post('/cmd/sidebar/delete') }
-                if (evt.key === 'A' && evt.shiftKey) { evt.preventDefault(); @post('/cmd/apply') }
-                if (evt.key === 'u' || evt.key === 'U') { evt.preventDefault(); @post('/cmd/undo') }
-                if (evt.key === 'q' || evt.key === 'Q') { evt.preventDefault(); @post('/cmd/queue/show') }
-                if (evt.key === '?') { evt.preventDefault(); @post('/cmd/help') }
-                if (evt.key === 'Escape') { evt.preventDefault(); @post('/cmd/close') }
+                const key = evt.code || evt.key
+                const shift = evt.shiftKey
+                const sidebarDirBlocked = $sidebarExpanded && $sidebarSelectedKind === 'directory' && $currentPath === '/'
+                const canPrev = !$sidebarExpanded ? $counterImageIndex > 1 : $sidebarSelectedIndex > 0
+                const canNext = !$sidebarExpanded ? $counterImageIndex < $counterImageTotal : $sidebarSelectedIndex < ($sidebarListLen - 1)
+
+                if (shift && (key === 'ArrowUp' || evt.key === 'K')) { evt.preventDefault(); @post('/cmd/queue/prev') }
+                else if (shift && (key === 'ArrowDown' || evt.key === 'J')) { evt.preventDefault(); @post('/cmd/queue/next') }
+                else if (shift && (key === 'ArrowLeft' || evt.key === 'H') && $queueSelected) { evt.preventDefault(); @post('/cmd/queue/remove-selected') }
+                else if (shift && (key === 'ArrowRight' || evt.key === 'L') && $queueSelected) { evt.preventDefault(); if (window.confirm('Apply selected queued action now?')) { @post('/cmd/queue/apply-selected') } }
+                else if (key === 'BracketRight' || evt.key === ']') { evt.preventDefault(); @post('/cmd/jump-next') }
+                else if (key === 'BracketLeft' || evt.key === '[') { evt.preventDefault(); @post('/cmd/jump-prev') }
+                else if ((key === 'ArrowLeft' || evt.key === 'h' || evt.key === 'H') && !sidebarDirBlocked) { evt.preventDefault(); @post('/cmd/left') }
+                else if (key === 'ArrowRight' || evt.key === 'l' || evt.key === 'L') { evt.preventDefault(); @post('/cmd/right') }
+                else if ((key === 'ArrowUp' || evt.key === 'k' || evt.key === 'K') && canPrev) { evt.preventDefault(); @post('/cmd/prev') }
+                else if ((key === 'ArrowDown' || evt.key === 'j' || evt.key === 'J') && canNext) { evt.preventDefault(); @post('/cmd/next') }
+                else if (key === 'Home') { evt.preventDefault(); @post('/cmd/home') }
+                else if (key === 'End') { evt.preventDefault(); @post('/cmd/end') }
+                else if (evt.key === 'i' || evt.key === 'I') { evt.preventDefault(); @post('/cmd/sidebar/toggle') }
+                else if ((evt.key === 'o' || evt.key === 'O') && evt.ctrlKey) { evt.preventDefault(); @post('/cmd/sidebar/toggle') }
+                else if (evt.key === 'Enter' && evt.ctrlKey && $sidebarExpanded && $sidebarSelectedKind === 'directory' && !$sidebarSelectedParent) { evt.preventDefault(); window.piclrPromptRenameDirectory?.() }
+                else if (evt.key === 'Enter' && !evt.ctrlKey && $sidebarExpanded && $sidebarSelectedKind === 'directory') { evt.preventDefault(); @post('/cmd/sidebar/open') }
+                else if (evt.key === 'Delete' && evt.ctrlKey && $sidebarExpanded && $sidebarSelectedKind === 'directory' && !$sidebarSelectedParent) { evt.preventDefault(); @post('/cmd/sidebar/delete') }
+                else if (evt.key === 'A' && shift) { evt.preventDefault(); @post('/cmd/apply/request') }
+                else if (evt.key === 'u' || evt.key === 'U') { evt.preventDefault(); @post('/cmd/undo') }
+                else if (evt.key === 'q' || evt.key === 'Q') { evt.preventDefault(); @post('/cmd/queue/show') }
+                else if (evt.key === '?') { evt.preventDefault(); @post('/cmd/help') }
+                else if (key === 'Escape') { evt.preventDefault(); @post('/cmd/close') }
             }
         "
     >
         {% include "elements/modal/none.html" %}
         {% include "elements/header.html" %}
-        <main-layout id="main-layout" data-class:sidebar-collapsed="!$sidebarExpanded">
+        <main-layout id="main-layout" data-class:sidebar-collapsed="!$sidebarExpanded" data-class:queue-collapsed="!$queueSidebarVisible">
             {% include "elements/sidebar.html" %}
             {% include "elements/image-viewer-empty.html" %}
+            {% include "elements/queue-sidebar.html" %}
         </main-layout>
         {% include "elements/footer.html" %}
         <input

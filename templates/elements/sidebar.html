@@ -47,7 +47,7 @@
         {% else %}
         {% for item in view.sidebar_items %}
         <entry-line
-            class="tone-{{ item.action_tone }}{% if item.selected %} log-entry-current{% endif %}{% if item.entry_kind == "directory" %} entry-directory{% endif %}"
+            class="tone-{{ item.action_tone }}{% if item.selected %} log-entry-current{% endif %}{% if item.peer_active %} peer-active{% endif %}{% if item.entry_kind == "directory" %} entry-directory{% endif %}"
             data-entry-kind="{{ item.entry_kind }}"
             data-entry-parent="{% if item.is_parent_link %}true{% else %}false{% endif %}"
             data-entry-path="{{ item.path_hint }}"
