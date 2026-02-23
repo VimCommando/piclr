@@ -64,11 +64,19 @@ The system MUST allow jumping to the next or previous undecided image using Shif
 - **THEN** the selection moves to the nearest later image with an undecided state
 
 ### Requirement: Open new path
-The system MUST allow the user to open a new directory from the UI via Ctrl+O.
+The system MUST allow the user to change directory from the sidebar navigation surface. `Ctrl+O` MUST toggle the sidebar. In web-only mode, the launch directory remains fixed as root. In Tauri mode, the sidebar root control MAY select a new root directory.
 
-#### Scenario: Open a new directory
-- **WHEN** the user presses Ctrl+O and selects a new directory
-- **THEN** the current run is replaced with a scan of the selected directory
+#### Scenario: Toggle sidebar navigation
+- **WHEN** the user presses `Ctrl+O`
+- **THEN** the sidebar file navigation is shown or hidden
+
+#### Scenario: Open a directory from sidebar
+- **WHEN** the user selects a directory row and chooses `open`
+- **THEN** the current run is updated to the selected child directory and the image list is rebuilt from supported files in that directory
+
+#### Scenario: Tauri root reselection from sidebar header
+- **WHEN** the app runs in Tauri mode and the user clicks the sidebar root control and picks a new directory
+- **THEN** the active root/current directory is replaced with the selected directory and the sidebar/image projections are rebuilt
 
 ### Requirement: Apply decision to current image
 The system MUST apply the left or right action to the currently selected image when the user presses the corresponding arrow key or click zone.

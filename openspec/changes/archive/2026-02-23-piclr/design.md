@@ -53,7 +53,7 @@ State is in-memory for each run. The frontend should be as stateless as possible
 - Rationale: Predictable navigation and reproducible ordering.
 
 **Startup path selection**
-- Decision: If a CLI path is provided, start scanning there; otherwise present a directory selection modal. Ctrl+O opens a new directory and replaces the current run.
+- Decision: If a CLI path is provided, start scanning there; otherwise use the current working directory. `Ctrl+O` toggles sidebar navigation. In web-only mode, the launch root is fixed; in Tauri mode, the sidebar root control can select a new root directory.
 - Alternatives: CLI-only path selection.
 - Rationale: Supports both terminal-driven and UI-driven workflows.
 

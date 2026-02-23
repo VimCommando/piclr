@@ -43,4 +43,4 @@
 ## 7. Verification
 
 - [x] 7.1 Add lightweight tests for state machine transitions and queue behavior
-- [x] 7.2 Manually verify navigation, sorting, and delete confirmation flows
+- [x] 7.2 Manually verify navigation, sorting, delete confirmation, and Tauri root re-selection flows

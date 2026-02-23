@@ -78,6 +78,13 @@ The system MUST allow running as a standalone loopback web app and MUST allow an
 - **WHEN** Tauri is not enabled
 - **THEN** the user can open the loopback URL in a browser and use the app
 
+### Requirement: Empty-state no-images message
+The system MUST present a clear empty-state message when no images are available in the currently selected directory.
+
+#### Scenario: No images available
+- **WHEN** the selected directory has zero supported images
+- **THEN** the main image viewer shows a centered empty-state message indicating there are no supported images in the current directory
+
 ### Requirement: Directory selection when no path is provided
 The system MUST prompt for a directory when started without a CLI path argument.
 

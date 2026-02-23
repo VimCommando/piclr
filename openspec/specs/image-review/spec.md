@@ -81,6 +81,10 @@ The system MUST allow users to change the current working directory from the sid
 - **WHEN** the user selects a directory row and chooses `open`
 - **THEN** the current run is updated to the selected child directory and the image list is rebuilt from supported files in that directory
 
+#### Scenario: Tauri root reselection from sidebar header
+- **WHEN** the app runs in Tauri mode and the user clicks the sidebar root control and picks a new directory
+- **THEN** the active root/current directory is replaced with the selected directory and the sidebar/image projections are rebuilt
+
 ### Requirement: Apply decision to current image
 The system MUST apply left/right actions only when the current selection is an image file.
 

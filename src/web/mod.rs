@@ -2028,6 +2028,27 @@ mod tests {
         assert_eq!(patch_response.status(), StatusCode::METHOD_NOT_ALLOWED);
     }
 
+    #[cfg(not(feature = "tauri"))]
+    #[tokio::test]
+    async fn root_select_endpoint_is_forbidden_without_tauri() {
+        let ctx = AppContext::new(sample_machine(true), AppConfig::default());
+        let app = router(ctx);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/cmd/sidebar/root/select")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"path":"/tmp"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
     #[tokio::test]
     async fn apply_decision_releases_state_lock_before_immediate_fs_work() {
         let ctx = AppContext::new(sample_machine(false), AppConfig::default());
