@@ -7,10 +7,13 @@
     "devUrl": "http://localhost"
   },
   "app": {
+    "macOSPrivateApi": true,
     "withGlobalTauri": true,
     "windows": [
       {
         "title": "piclr",
+        "transparent": true,
+        "backgroundColor": [0, 0, 0, 0],
         "decorations": false,
         "width": 1200,
         "height": 800

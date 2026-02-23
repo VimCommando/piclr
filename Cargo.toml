@@ -54,7 +54,7 @@ urlencoding = "2"
 [dependencies.tauri]
 version = "2"
 optional = true
-features = []
+features = ["macos-private-api"]
 
 [dependencies.rfd]
 version = "0.14"

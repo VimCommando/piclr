@@ -29,7 +29,7 @@
 
 html,
 body {
-    background: var(--bg);
+    background: transparent;
     color: var(--text);
     display: flex;
     flex-direction: column;
@@ -41,6 +41,7 @@ body {
 }
 
 app-shell {
+    background: var(--bg);
     display: flex;
     flex: 1;
     flex-direction: column;
@@ -48,8 +49,10 @@ app-shell {
 }
 
 body.tauri-chrome {
+    background: transparent;
     border: 1px solid var(--window-border);
-    border-radius: 8px;
+    border-radius: 10px;
+    overflow: hidden;
     padding: 0;
 }
 
