@@ -1,13 +1,17 @@
 use std::collections::VecDeque;
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use super::actions::{ActionConfig, ActionMapping, DecisionSide, DecisionState};
 use super::preload::PreloadState;
 use super::sorting::{SortMode, sort_indices};
 use super::undo::UndoEntry;
+
+mod modal;
+
+pub use modal::ModalView;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AppMode {
@@ -100,17 +104,6 @@ pub struct ReadModelProjection {
     pub queue_count: usize,
     pub stack_start: usize,
     pub stack_end: usize,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ModalView {
-    ApplyConfirm,
-    DeleteConfirm,
-    QueueNotEmptyConfirm,
-    DirectoryDeleteConfirm,
-    Queue,
-    Help,
-    ApplyResult,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -211,66 +204,48 @@ impl AppStateInner {
     }
 
     pub fn next(&mut self) {
-        if self.cursor + 1 < self.order.len() {
-            self.cursor += 1;
-            self.record_nav(NavDirection::Down);
-            self.update_stack_projection(5);
-            self.update_preload();
-            self.sync_selected_to_current_image();
-            self.directory_actions_entry_id = None;
+        let position = self.cursor + 1;
+        if position < self.order.len() {
+            self.move_cursor(position, NavDirection::Down);
         }
     }
 
     pub fn prev(&mut self) {
-        if self.cursor > 0 {
-            self.cursor -= 1;
-            self.record_nav(NavDirection::Up);
-            self.update_stack_projection(5);
-            self.update_preload();
-            self.sync_selected_to_current_image();
-            self.directory_actions_entry_id = None;
+        if let Some(position) = self.cursor.checked_sub(1) {
+            self.move_cursor(position, NavDirection::Up);
         }
     }
 
     pub fn jump_next_undecided(&mut self) {
-        if self.order.is_empty() {
-            return;
-        }
-        let start = self.cursor + 1;
-        if let Some((offset, _)) = self
-            .order
-            .iter()
-            .skip(start)
-            .enumerate()
-            .find(|(_, idx)| self.images[**idx].decision.is_undecided())
-        {
-            self.cursor = start + offset;
-            self.record_nav(NavDirection::Down);
-            self.update_stack_projection(5);
-            self.update_preload();
-            self.sync_selected_to_current_image();
-            self.directory_actions_entry_id = None;
-        }
+        self.jump_undecided(NavDirection::Down);
     }
 
     pub fn jump_prev_undecided(&mut self) {
+        self.jump_undecided(NavDirection::Up);
+    }
+
+    fn jump_undecided(&mut self, direction: NavDirection) {
         if self.order.is_empty() {
             return;
         }
-        if self.cursor == 0 {
-            return;
+        let is_undecided =
+            |&position: &usize| self.images[self.order[position]].decision.is_undecided();
+        let position = match direction {
+            NavDirection::Up => (0..self.cursor).rev().find(is_undecided),
+            NavDirection::Down => (self.cursor + 1..self.order.len()).find(is_undecided),
+        };
+        if let Some(position) = position {
+            self.move_cursor(position, direction);
         }
-        if let Some(position) = (0..self.cursor)
-            .rev()
-            .find(|pos| self.images[self.order[*pos]].decision.is_undecided())
-        {
-            self.cursor = position;
-            self.record_nav(NavDirection::Up);
-            self.update_stack_projection(5);
-            self.update_preload();
-            self.sync_selected_to_current_image();
-            self.directory_actions_entry_id = None;
-        }
+    }
+
+    fn move_cursor(&mut self, position: usize, direction: NavDirection) {
+        self.cursor = position;
+        self.record_nav(direction);
+        self.update_stack_projection(5);
+        self.update_preload();
+        self.sync_selected_to_current_image();
+        self.directory_actions_entry_id = None;
     }
 
     pub fn select_image_by_id(&mut self, image_id: u64) -> bool {
@@ -348,35 +323,21 @@ impl AppStateInner {
     }
 
     pub fn select_next_entry(&mut self) -> bool {
-        if self.nav_entries.is_empty() {
-            return false;
-        }
-        let current_pos = self
-            .selected_entry_id
-            .and_then(|id| self.nav_entries.iter().position(|entry| entry.id == id));
-        let next_pos = match current_pos {
-            Some(pos) if pos + 1 < self.nav_entries.len() => pos + 1,
-            Some(_) => return false,
-            None => 0,
-        };
-        let entry_id = self.nav_entries[next_pos].id;
-        self.select_entry_by_id(entry_id)
+        self.select_adjacent_entry(NavDirection::Down)
     }
 
     pub fn select_prev_entry(&mut self) -> bool {
-        if self.nav_entries.is_empty() {
-            return false;
-        }
-        let current_pos = self
+        self.select_adjacent_entry(NavDirection::Up)
+    }
+
+    fn select_adjacent_entry(&mut self, direction: NavDirection) -> bool {
+        let current = self
             .selected_entry_id
             .and_then(|id| self.nav_entries.iter().position(|entry| entry.id == id));
-        let prev_pos = match current_pos {
-            Some(pos) if pos > 0 => pos - 1,
-            Some(_) => return false,
-            None => 0,
+        let Some(position) = adjacent_selection(current, self.nav_entries.len(), direction) else {
+            return false;
         };
-        let entry_id = self.nav_entries[prev_pos].id;
-        self.select_entry_by_id(entry_id)
+        self.select_entry_by_id(self.nav_entries[position].id)
     }
 
     pub fn selected_entry(&self) -> Option<&NavEntry> {
@@ -404,15 +365,19 @@ impl AppStateInner {
     }
 
     pub fn navigate_to_parent_directory(&self) -> Option<PathBuf> {
+        let (parent, _) = self.parent_directory_paths()?;
+        Some(parent.to_path_buf())
+    }
+
+    fn parent_directory_paths(&self) -> Option<(&Path, &Path)> {
         let root = self.root_dir.as_ref()?;
         let current = self.current_dir.as_ref()?;
         if current == root {
             return None;
         }
-        current
-            .parent()
-            .filter(|parent| parent.starts_with(root))
-            .map(|path| path.to_path_buf())
+        let parent = current.parent()?;
+        let relative = parent.strip_prefix(root).ok()?;
+        Some((parent, relative))
     }
 
     pub fn toggle_sidebar(&mut self) {
@@ -445,40 +410,27 @@ impl AppStateInner {
     }
 
     pub fn select_queue_next(&mut self) -> bool {
-        if self.queued_ids.is_empty() {
-            return false;
-        }
-        self.activate_queue_focus();
-        let current_pos = self.selected_queue_image_id.and_then(|id| {
-            self.queued_ids
-                .iter()
-                .position(|queued_id| *queued_id == id)
-        });
-        let next_pos = match current_pos {
-            Some(pos) if pos + 1 < self.queued_ids.len() => pos + 1,
-            Some(_) => return false,
-            None => 0,
-        };
-        self.selected_queue_image_id = self.queued_ids.get(next_pos).copied();
-        true
+        self.select_adjacent_queue_item(NavDirection::Down)
     }
 
     pub fn select_queue_prev(&mut self) -> bool {
+        self.select_adjacent_queue_item(NavDirection::Up)
+    }
+
+    fn select_adjacent_queue_item(&mut self, direction: NavDirection) -> bool {
         if self.queued_ids.is_empty() {
             return false;
         }
         self.activate_queue_focus();
-        let current_pos = self.selected_queue_image_id.and_then(|id| {
+        let current = self.selected_queue_image_id.and_then(|id| {
             self.queued_ids
                 .iter()
                 .position(|queued_id| *queued_id == id)
         });
-        let prev_pos = match current_pos {
-            Some(pos) if pos > 0 => pos - 1,
-            Some(_) => return false,
-            None => 0,
+        let Some(position) = adjacent_selection(current, self.queued_ids.len(), direction) else {
+            return false;
         };
-        self.selected_queue_image_id = self.queued_ids.get(prev_pos).copied();
+        self.selected_queue_image_id = Some(self.queued_ids[position]);
         true
     }
 
@@ -501,11 +453,7 @@ impl AppStateInner {
     }
 
     pub fn select_queue_item_by_id(&mut self, image_id: u64) -> bool {
-        if !self
-            .queued_ids
-            .iter()
-            .any(|queued_id| *queued_id == image_id)
-        {
+        if !self.queued_ids.contains(&image_id) {
             return false;
         }
         self.activate_queue_focus();
@@ -549,11 +497,7 @@ impl AppStateInner {
             Some(id) => id,
             None => return false,
         };
-        if !self
-            .queued_ids
-            .iter()
-            .any(|queued_id| *queued_id == selected)
-        {
+        if !self.queued_ids.contains(&selected) {
             return false;
         }
         let action = match side {
@@ -602,28 +546,9 @@ impl AppStateInner {
         );
 
         if remove_image {
-            self.images.remove(image_idx);
-            self.order = self
-                .order
-                .iter()
-                .filter_map(|idx| {
-                    if *idx == image_idx {
-                        None
-                    } else if *idx > image_idx {
-                        Some(*idx - 1)
-                    } else {
-                        Some(*idx)
-                    }
-                })
-                .collect();
-            self.nav_entries
-                .retain(|entry| entry.image_id != Some(image_id));
-            if self.order.is_empty() {
-                self.cursor = 0;
-            } else if self.cursor >= self.order.len() {
-                self.cursor = self.order.len() - 1;
-            }
-        } else if let Some(image) = self.images.get_mut(image_idx) {
+            self.remove_image(image_idx);
+        } else {
+            let image = &mut self.images[image_idx];
             image.decision = DecisionState::Undecided;
             image.queued_action = None;
             image.rename_sequence = None;
@@ -635,6 +560,22 @@ impl AppStateInner {
         self.sync_selected_to_current_image();
         self.directory_actions_entry_id = None;
         true
+    }
+
+    fn remove_image(&mut self, image_idx: usize) {
+        let image = self.images.remove(image_idx);
+        self.order.retain_mut(|idx| {
+            if *idx == image_idx {
+                return false;
+            }
+            if *idx > image_idx {
+                *idx -= 1;
+            }
+            true
+        });
+        self.nav_entries
+            .retain(|entry| entry.image_id != Some(image.id));
+        self.cursor = self.cursor.min(self.order.len().saturating_sub(1));
     }
 
     pub fn close_directory_actions(&mut self) {
@@ -761,24 +702,6 @@ impl AppStateInner {
         None
     }
 
-    pub fn show_view(&mut self, view: ModalView) {
-        self.active_modal = Some(view);
-    }
-
-    pub fn close_view(&mut self) -> Option<ModalView> {
-        self.active_modal.take()
-    }
-
-    pub fn hide_view(&mut self, view: ModalView) {
-        if self.active_modal == Some(view) {
-            self.active_modal = None;
-        }
-    }
-
-    pub fn has_view(&self, view: ModalView) -> bool {
-        self.active_modal == Some(view)
-    }
-
     pub fn queued_actions_for_apply(&self) -> Vec<(PathBuf, ActionConfig, Option<u64>)> {
         self.queued_ids
             .iter()
@@ -828,81 +751,71 @@ impl AppStateInner {
             self.queue_focus = false;
             return;
         }
-        let selected_present = self
+        if self
             .selected_queue_image_id
-            .map(|selected| {
-                self.queued_ids
-                    .iter()
-                    .any(|queued_id| *queued_id == selected)
-            })
-            .unwrap_or(false);
-        if selected_present {
+            .is_some_and(|selected| self.queued_ids.contains(&selected))
+        {
             return;
         }
-        let from_current = self.current().map(|image| image.id).filter(|current_id| {
-            self.queued_ids
-                .iter()
-                .any(|queued_id| queued_id == current_id)
-        });
+        let from_current = self
+            .current()
+            .map(|image| image.id)
+            .filter(|current_id| self.queued_ids.contains(current_id));
         self.selected_queue_image_id = from_current.or_else(|| self.queued_ids.front().copied());
     }
 
     fn rebuild_nav_entries(&mut self, mut directories: Vec<PathBuf>) {
         directories.sort();
         let mut entries = Vec::with_capacity(directories.len() + self.images.len());
-        if let (Some(root), Some(current)) = (self.root_dir.as_ref(), self.current_dir.as_ref()) {
-            if current != root {
-                if let Some(parent) = current.parent() {
-                    if let Ok(rel_path) = parent.strip_prefix(root) {
-                        entries.push(NavEntry {
-                            id: directory_entry_id(&rel_path.to_path_buf()),
-                            rel_path: rel_path.to_path_buf(),
-                            label: "..".to_string(),
-                            kind: NavEntryKind::Directory,
-                            image_id: None,
-                            is_parent_link: true,
-                        });
-                    }
-                }
-            }
+        if let Some(entry) = self.parent_nav_entry() {
+            entries.push(entry);
         }
         for rel_path in directories {
-            let label = rel_path
-                .file_name()
-                .map(|name| name.to_string_lossy().to_string())
-                .unwrap_or_else(|| rel_path.to_string_lossy().to_string());
             entries.push(NavEntry {
                 id: directory_entry_id(&rel_path),
+                label: nav_entry_label(&rel_path),
                 rel_path,
-                label,
                 kind: NavEntryKind::Directory,
                 image_id: None,
                 is_parent_link: false,
             });
         }
-        for idx in &self.order {
-            if let Some(image) = self.images.get(*idx) {
-                let rel_path = self
-                    .root_dir
-                    .as_ref()
-                    .and_then(|root| image.path.strip_prefix(root).ok())
-                    .map(|path| path.to_path_buf())
-                    .unwrap_or_else(|| image.path.clone());
-                let label = rel_path
-                    .file_name()
-                    .map(|name| name.to_string_lossy().to_string())
-                    .unwrap_or_else(|| rel_path.to_string_lossy().to_string());
-                entries.push(NavEntry {
-                    id: image.id,
-                    rel_path,
-                    label,
-                    kind: NavEntryKind::File,
-                    image_id: Some(image.id),
-                    is_parent_link: false,
-                });
-            }
-        }
+        entries.extend(
+            self.order
+                .iter()
+                .filter_map(|&idx| self.images.get(idx))
+                .map(|image| self.image_nav_entry(image)),
+        );
         self.nav_entries = entries;
+    }
+
+    fn parent_nav_entry(&self) -> Option<NavEntry> {
+        let (_, rel_path) = self.parent_directory_paths()?;
+        Some(NavEntry {
+            id: directory_entry_id(rel_path),
+            rel_path: rel_path.to_path_buf(),
+            label: "..".to_string(),
+            kind: NavEntryKind::Directory,
+            image_id: None,
+            is_parent_link: true,
+        })
+    }
+
+    fn image_nav_entry(&self, image: &ImageEntry) -> NavEntry {
+        let path = image.path.as_path();
+        let rel_path = self
+            .root_dir
+            .as_ref()
+            .and_then(|root| path.strip_prefix(root).ok())
+            .unwrap_or(path);
+        NavEntry {
+            id: image.id,
+            rel_path: rel_path.to_path_buf(),
+            label: nav_entry_label(rel_path),
+            kind: NavEntryKind::File,
+            image_id: Some(image.id),
+            is_parent_link: false,
+        }
     }
 
     fn sync_selected_to_current_image(&mut self) {
@@ -944,7 +857,27 @@ impl AppStateInner {
     }
 }
 
-fn directory_entry_id(rel_path: &PathBuf) -> u64 {
+fn adjacent_selection(
+    current: Option<usize>,
+    len: usize,
+    direction: NavDirection,
+) -> Option<usize> {
+    let position = match (current, direction) {
+        (None, _) => 0,
+        (Some(position), NavDirection::Up) => position.checked_sub(1)?,
+        (Some(position), NavDirection::Down) => position + 1,
+    };
+    (position < len).then_some(position)
+}
+
+fn nav_entry_label(path: &Path) -> String {
+    path.file_name()
+        .unwrap_or(path.as_os_str())
+        .to_string_lossy()
+        .into_owned()
+}
+
+fn directory_entry_id(rel_path: &Path) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     rel_path.hash(&mut hasher);
     (hasher.finish() & !(1_u64 << 63)) | (1_u64 << 63)

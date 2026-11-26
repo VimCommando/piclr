@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use piclr::domain::state::{AppStateInner, NavDirection};
 use piclr::domain::{
     ActionConfig, ActionMapping, AppState, DecisionSide, DecisionState, ImageEntry, ImageMeta,
     SortDirection, SortKey, SortMode,
@@ -38,6 +39,83 @@ fn state_machine_transitions() {
     machine.transition_to_viewing();
     machine.transition_to_applying();
     machine.transition_to_done();
+}
+
+#[test]
+fn directory_snapshot_keeps_parent_link_and_entry_order() {
+    let mapping = ActionMapping {
+        left: ActionConfig::Delete,
+        right: ActionConfig::Keep,
+    };
+    let sort_mode = SortMode {
+        key: SortKey::Filesystem,
+        direction: SortDirection::Asc,
+    };
+    let root = PathBuf::from("photos");
+    let current = root.join("album");
+    let mut state = AppStateInner::new(true, mapping, sort_mode);
+    state.set_directory_snapshot(
+        vec![
+            sample_image(1, "photos/album/b.jpg", 1),
+            sample_image(2, "photos/album/a.jpg", 0),
+        ],
+        vec![PathBuf::from("album/z"), PathBuf::from("album/a")],
+        Some(root.clone()),
+        Some(current),
+    );
+
+    let labels: Vec<_> = state
+        .nav_entries
+        .iter()
+        .map(|entry| entry.label.as_str())
+        .collect();
+    assert_eq!(labels, ["..", "a", "z", "a.jpg", "b.jpg"]);
+    assert!(state.nav_entries[0].is_parent_link);
+    assert_eq!(state.nav_entries[3].rel_path, PathBuf::from("album/a.jpg"));
+    assert!(state.select_first_entry());
+    assert!(!state.select_prev_entry());
+    assert_eq!(state.selected_directory_path(), Some(root.clone()));
+    assert!(state.select_next_entry());
+    assert_eq!(state.selected_directory_path(), Some(root.join("album/a")));
+    assert!(state.select_prev_entry());
+    assert_eq!(state.selected_directory_path(), Some(root.clone()));
+    assert_eq!(state.navigate_to_parent_directory(), Some(root));
+}
+
+#[test]
+fn undecided_navigation_skips_decided_images() {
+    let mapping = ActionMapping {
+        left: ActionConfig::Delete,
+        right: ActionConfig::Keep,
+    };
+    let sort_mode = SortMode {
+        key: SortKey::Filesystem,
+        direction: SortDirection::Asc,
+    };
+    let mut state = AppStateInner::new(true, mapping, sort_mode);
+    state.set_images(
+        vec![
+            sample_image(1, "a.jpg", 0),
+            sample_image(2, "b.jpg", 1),
+            sample_image(3, "c.jpg", 2),
+        ],
+        None,
+    );
+    assert!(state.select_image_by_id(2));
+    state.apply_decision(DecisionSide::Right).unwrap();
+    let tick = state.nav_tick;
+
+    state.jump_prev_undecided();
+    assert_eq!(state.selected_entry_id, Some(1));
+    assert_eq!(state.nav_direction, Some(NavDirection::Up));
+    state.jump_prev_undecided();
+    assert_eq!(state.nav_tick, tick + 1);
+
+    state.jump_next_undecided();
+    assert_eq!(state.selected_entry_id, Some(3));
+    assert_eq!(state.nav_direction, Some(NavDirection::Down));
+    state.jump_next_undecided();
+    assert_eq!(state.nav_tick, tick + 2);
 }
 
 #[test]
@@ -244,8 +322,14 @@ fn queue_sidebar_selection_and_override_work() {
 
     assert!(machine.state_mut().select_queue_first());
     assert_eq!(machine.state().selected_queue_image_id, Some(1));
+    assert!(!machine.state_mut().select_queue_prev());
+    assert!(machine.state_mut().select_queue_next());
+    assert_eq!(machine.state().selected_queue_image_id, Some(2));
+    assert!(machine.state_mut().select_queue_prev());
+    assert_eq!(machine.state().selected_queue_image_id, Some(1));
     assert!(machine.state_mut().select_queue_last());
     assert_eq!(machine.state().selected_queue_image_id, Some(3));
+    assert!(!machine.state_mut().select_queue_next());
 
     assert!(
         machine
